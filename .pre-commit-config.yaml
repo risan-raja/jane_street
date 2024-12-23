@@ -10,4 +10,5 @@ repos:
     hooks:
       # Run the formatter.
       - id: ruff
+        args: [ --fix ]
       - id: ruff-format
