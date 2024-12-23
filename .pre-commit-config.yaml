@@ -9,4 +9,5 @@ repos:
     rev: v0.8.4
     hooks:
       # Run the formatter.
+      - id: ruff
       - id: ruff-format
