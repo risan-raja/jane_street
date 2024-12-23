@@ -1,0 +1,141 @@
+hidden_size: 64
+real_variables:
+- weight
+- feature_00
+- feature_01
+- feature_02
+- feature_03
+- feature_04
+- feature_05
+- feature_06
+- feature_07
+- feature_08
+- feature_12
+- feature_13
+- feature_14
+- feature_15
+- feature_16
+- feature_17
+- feature_18
+- feature_19
+- feature_20
+- feature_21
+- feature_22
+- feature_23
+- feature_24
+- feature_25
+- feature_26
+- feature_27
+- feature_28
+- feature_29
+- feature_30
+- feature_31
+- feature_32
+- feature_33
+- feature_34
+- feature_35
+- feature_36
+- feature_37
+- feature_38
+- feature_39
+- feature_40
+- feature_41
+- feature_42
+- feature_43
+- feature_44
+- feature_45
+- feature_46
+- feature_47
+- feature_48
+- feature_49
+- feature_50
+- feature_51
+- feature_52
+- feature_53
+- feature_54
+- feature_55
+- feature_56
+- feature_57
+- feature_58
+- feature_59
+- feature_60
+- feature_61
+- feature_62
+- feature_63
+- feature_64
+- feature_65
+- feature_66
+- feature_67
+- feature_68
+- feature_69
+- feature_70
+- feature_71
+- feature_72
+- feature_73
+- feature_74
+- feature_75
+- feature_76
+- feature_77
+- feature_78
+real_hidden_size: 64
+responder_variables:
+- responder_0
+- responder_1
+- responder_2
+- responder_3
+- responder_4
+- responder_5
+- responder_6
+- responder_7
+- responder_8
+x_categoricals:
+- feature_09
+- feature_10
+- feature_11
+- time_id
+- symbol_id
+embedding_sizes:
+  time_id:
+  - 968
+  - 64
+  symbol_id:
+  - 39
+  - 12
+  categoric:
+  - 25
+  - 10
+categorical_groups:
+  categoric:
+  - feature_09
+  - feature_10
+  - feature_11
+categorical_groups_name_index:
+  categoric:
+  - 0
+  - 1
+  - 2
+static_categoricals:
+- symbol_id
+dropout: 0.01
+time_varying_categoricals:
+- feature_09
+- feature_10
+- feature_11
+share_single_variable_networks: true
+max_encoder_length: 968
+max_prediction_length: 968
+min_prediction_length: 1
+min_encoder_length: 1
+lstm_layers: 4
+n_heads: 4
+n_targets: 1
+output_size: 3
+causal_attention: true
+n_responders: 9
+target_idx: 6
+target_name: responder_6
+learning_rate: 0.001
+quantiles:
+- 0.3
+- 0.5
+- 0.7
