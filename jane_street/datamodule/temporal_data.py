@@ -1,17 +1,17 @@
 import lightning as L
-from typing import List, Tuple, Optional
+from typing import Optional
 from torch.utils.data import DataLoader
+from omegaconf import DictConfig
 from ..datasets import JSTrainDataset, JSDatasetMeta, custom_collate_fn
 from ..samplers import JSTrainDistributedSampler, JSPredictDataSampler
 
 
 class JSDataModule(L.LightningDataModule):
-    def __init__(self, config):
+    def __init__(self, config: DictConfig):
         super(JSDataModule, self).__init__()
-        self.data_dir = "/storage/atlasAppRaja/library/kaggle/data"
-        self.train_index_path = f"{self.data_dir}/symbdf/symbdf_cat_train.parquet"
-        self.val_index_path = f"{self.data_dir}/data/symbdf/symbdf_cat_val.parquet"
-        self.test_index_path = f"{self.data_dir}/data/symbdf/symbdf_cat_test.parquet"
+        self.train_index_path = config.train.index_path
+        self.val_index_path = config.val.index_path
+        self.test_index_path = config.test.index_path
         self.train_batch_size = config.train.batch_size
         self.val_batch_size = config.val.batch_size
         self.test_batch_size = config.test.batch_size
@@ -35,7 +35,7 @@ class JSDataModule(L.LightningDataModule):
             batch_size=self.train_batch_size,
             sampler=JSTrainDistributedSampler(self.train_dataset),
             collate_fn=custom_collate_fn,
-            num_workers=8,
+            num_workers=16,
             pin_memory=True,
             drop_last=True,
         )
