@@ -55,7 +55,15 @@ class TemporalFT(ppl.LightningModule):
         return self.model(X)
 
     def configure_optimizers(self):
-        return torch.optim.RAdam(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.RAdam(self.parameters(), lr=self.learning_rate)
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", patience=5, factor=0.1
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": lr_scheduler,
+            "monitor": "val_loss",
+        }
 
     def log(self, *args, **kwargs):
         """See :meth:`lightning.pytorch.core.lightning.LightningModule.log`."""

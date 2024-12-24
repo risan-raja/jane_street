@@ -5,7 +5,6 @@ from torch.utils.data import DistributedSampler
 from typing import Optional
 import polars as pl
 import math
-import json
 import torch.distributed as dist
 from ..datasets.js_dataset import JSTrainDataset
 
@@ -128,17 +127,6 @@ class JSTrainDistributedSampler(DistributedSampler):
             g = torch.Generator()
             g.manual_seed(self.seed)
             indices = self.get_indices_epoch(g)  # type: ignore[arg-type]
-
-        # if self.drop_last and len(self.dataset) % self.num_replicas != 0:  # type: ignore[arg-type]
-        #     # Split to nearest available length that is evenly divisible.
-        #     # This is to ensure each rank receives the same amount of data when
-        #     # using this Sampler.
-        #     self.num_samples = math.ceil(
-        #         (len(indices) - self.num_replicas) / self.num_replicas  # type: ignore[arg-type]
-        #     )
-        # else:
-        #     self.num_samples = math.ceil(len(indices) / self.num_replicas)  # type: ignore[arg-type]
-
         self.total_size = self.num_samples * self.num_replicas
 
         if not self.drop_last:
@@ -157,10 +145,7 @@ class JSTrainDistributedSampler(DistributedSampler):
 
         # subsample
         indices = indices[self.rank : self.total_size : self.num_replicas]
-        with open(f"indices_train_epoch_{self.epoch}_rank_{self.rank}.json", "w") as f:
-            json.dump(indices, f)
         assert len(indices) == self.num_samples
-        # print("Indices Assigned ", len(indices))
         return iter(indices)
 
     @property
