@@ -1,4 +1,4 @@
-hidden_size: 64
+hidden_size: 32
 real_variables:
 - weight
 - feature_00
@@ -77,7 +77,7 @@ real_variables:
 - feature_76
 - feature_77
 - feature_78
-real_hidden_size: 64
+real_hidden_size: 32
 responder_variables:
 - responder_0
 - responder_1
@@ -107,14 +107,14 @@ max_prediction_length: 968
 min_prediction_length: 1
 min_encoder_length: 1
 lstm_layers: 4
-n_heads: 4
+n_heads: 8
 n_targets: 1
 output_size: 3
 causal_attention: true
 n_responders: 9
 target_idx: 6
 target_name: responder_6
-learning_rate: 0.001
+learning_rate: 0.0001
 quantiles:
 - 0.3
 - 0.5
@@ -132,19 +132,20 @@ embedding_sizes:
   - 11
   time_id:
   - 968
-  - 64
+  - 32
   symbol_id:
   - 39
   - 12
-log_interval: 2
+log_interval: 20
 log_val_interval: 1
 train:
   batch_size: 64
   index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_train.parquet
 val:
-  batch_size: 32
+  batch_size: 256
   index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_val.parquet
 test:
-  batch_size: 32
+  batch_size: 256
   index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_test.parquet
 data_dir: /storage/atlasAppRaja/library/kaggle/jane_street/data
+skip_interpretation: true

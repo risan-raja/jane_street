@@ -415,12 +415,12 @@ class TFT(nn.Module, TupleOutputMixIn):
         output = self.revin[self.target_name](self.output_layer(output), mode="denorm")
         return self.to_network_output(
             prediction=output,
-            attention=attn_output_weights,
-            static_variables=torch.cat(
-                [enc_static_variable_selection, dec_static_variable_selection], dim=1
-            ),
-            encoder_variables=encoder_sparse_weights,
-            decoder_variables=decoder_sparse_weights,
+            # attention=attn_output_weights,
+            # static_variables=torch.cat(
+            #     [enc_static_variable_selection, dec_static_variable_selection], dim=1
+            # ),
+            # encoder_variables=encoder_sparse_weights,
+            # decoder_variables=decoder_sparse_weights,
             encoder_lengths=encoder_lengths,
             decoder_lengths=decoder_lengths,
         )

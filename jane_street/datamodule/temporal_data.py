@@ -15,12 +15,6 @@ class JSDataModule(pl.LightningDataModule):
         self.train_batch_size = config.train.batch_size
         self.val_batch_size = config.val.batch_size
         self.test_batch_size = config.test.batch_size
-        self.train_dataset_metadata = JSDatasetMeta(index_path=self.train_index_path)
-        self.train_dataset = JSTrainDataset(self.train_dataset_metadata)
-        self.val_dataset_metadata = JSDatasetMeta(index_path=self.val_index_path)
-        self.val_dataset = JSTrainDataset(self.val_dataset_metadata)
-        self.test_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
-        self.test_dataset = JSTrainDataset(self.test_dataset_metadata)
 
     def setup(self, stage: Optional[str] = None):
         if stage == "fit":
@@ -35,33 +29,39 @@ class JSDataModule(pl.LightningDataModule):
             self.test_dataset = JSTrainDataset(self.test_dataset_metadata)
 
     def train_dataloader(self):
+        self.train_dataset_metadata = JSDatasetMeta(index_path=self.train_index_path)
+        self.train_dataset = JSTrainDataset(self.train_dataset_metadata)
         self.train_sampler = JSTrainDistributedSampler(self.train_dataset)
         return DataLoader(
             dataset=self.train_dataset,
             batch_size=self.train_batch_size,
-            sampler=JSTrainDistributedSampler(self.train_dataset),
+            sampler=self.train_sampler,
             collate_fn=custom_collate_fn,
-            num_workers=32,
+            num_workers=16,
             pin_memory=True,
             drop_last=True,
         )
 
     def val_dataloader(self):
+        self.val_dataset_metadata = JSDatasetMeta(index_path=self.val_index_path)
+        self.val_dataset = JSTrainDataset(self.val_dataset_metadata)
         self.val_sampler = JSPredictDataSampler(self.val_dataset, shuffle=False)
         return DataLoader(
-            dataset=self.train_dataset,
+            dataset=self.val_dataset,
             batch_size=self.val_batch_size,
             sampler=self.val_sampler,
             collate_fn=custom_collate_fn,
-            pin_memory=True,
+            pin_memory=False,
             num_workers=8,
             drop_last=False,
         )
 
     def test_dataloader(self):
+        self.test_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
+        self.test_dataset = JSTrainDataset(self.test_dataset_metadata)
         self.test_sampler = JSPredictDataSampler(self.test_dataset, shuffle=False)
         return DataLoader(
-            dataset=self.val_dataset,
+            dataset=self.test_dataset,
             batch_size=self.test_batch_size,
             sampler=self.test_sampler,
             collate_fn=custom_collate_fn,

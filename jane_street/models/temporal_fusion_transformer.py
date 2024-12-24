@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import torch
 from ..layers.tft import TFT
 from ..metrics.quantile import WeightedQuantileLoss
-from ..metrics.point import ZRMSE, SMAPE
+from ..metrics.point import SMAPE, MAE, MAPE
 from ..utils.outputs import detach, create_mask, integer_histogram, masked_op
 from ..utils.pad import padded_stack
 
@@ -27,7 +27,7 @@ class TemporalFT(ppl.LightningModule):
         self.config = master_conf
         self.model = TFT(master_conf)
         self.loss = WeightedQuantileLoss(master_conf.quantiles)
-        self.logging_metrics = [ZRMSE(), SMAPE()]
+        self.logging_metrics = [SMAPE(), MAE(), MAPE()]
         self.training_step_outputs = []
         self.validation_step_outputs = []
         self.test_step_outputs = []
@@ -116,6 +116,12 @@ class TemporalFT(ppl.LightningModule):
         x, y = batch
         log, out = self.step(x, y, batch_idx)
         self.training_step_outputs.append(log)
+        if self.global_step % 10 == 0:
+            self.log_metrics(y, out, batch_idx)
+        # if self.global_step % self.log_interval*5 == 0:
+        #     # self.log_interpretation(self.training_step_output
+        #     self.training_step_outputs.clear()
+        # self.on_train_epoch_end()
         return log
 
     def on_train_epoch_end(self):
@@ -127,14 +133,22 @@ class TemporalFT(ppl.LightningModule):
         log, out = self.step(x, y, batch_idx)
         log.update(self.create_log(x, y, out, batch_idx))
         self.validation_step_outputs.append(log)
+        if self.global_step % self.log_interval == 0:
+            self.log_metrics(y, out, batch_idx)
+        # if self.global_step % self.log_interval*5 == 0:
+        #     self.validation_step_outputs.clear()
+        # self.on_validation_epoch_end()
+        # self.on_train_epoch_end()
         return log
 
     def on_epoch_end(self, outputs):
         """
         run at epoch end for training or validation
         """
-        if self.log_interval > 0 and not self.training:
-            self.log_interpretation(outputs)
+        return None
+        # if self.log_interval > 0 and not self.training:
+        # self.log_interpretation(outputs)
+        # self.log_metrics()
 
     def on_validation_epoch_end(self):
         self.on_epoch_end(self.validation_step_outputs)
@@ -164,16 +178,19 @@ class TemporalFT(ppl.LightningModule):
         self.log(
             f"{self.current_stage}_loss",
             loss,
-            prog_bar=True,
+            # prog_bar=True,
             on_step=True,
             on_epoch=True,
             batch_size=len(x["decoder_lengths"]),
             sync_dist=True,
         )
+        # self.log
+        # self.log_metrics()
         log = {"loss": loss, "n_samples": x["decoder_lengths"].size(0)}
         return log, out
 
     def log_metrics(self, target, prediction, batch_idx):
+        # print("Triggered")
         y_hat_point = prediction["prediction"].detach()
         for metric in self.logging_metrics:
             loss_value = metric(y_hat_point, target)
@@ -189,8 +206,8 @@ class TemporalFT(ppl.LightningModule):
         self.log_metrics(y, out, batch_idx)
         # log = super().create_log(x, y, out, batch_idx, **kwargs)
         log = {}
-        if self.log_interval > 0:
-            log["interpretation"] = self._log_interpretation(out)
+        # if self.log_interval > 0:
+        #     log["interpretation"] = self._log_interpretation(out)
         return log
 
     def _log_interpretation(self, out):
