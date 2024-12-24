@@ -1,11 +1,7 @@
-from typing import Any
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile
 import zarr
-from numpy.typing import NDArray
-from collections import OrderedDict
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OrdinalEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 import pickle
 import json
 import polars as pl
@@ -48,16 +44,18 @@ class JSDatasetMeta:
         Initializes the Zarr group and loads the JSON metadata files.
     """
 
-    dataloc = "/storage/atlasAppRaja/library/kaggle/data"
+    dataloc = "/storage/atlasAppRaja/library/kaggle/jane_street/data"
     date_data_dist_path: str = field(default=f"{dataloc}/date_data_dist_strict.json")
     date_symbol_path: str = field(default=f"{dataloc}/date_symbol_strict.json")
     symbols_prev_date_path: str = field(
         default=f"{dataloc}/prev_date_symbols_strict.json"
     )
     categories_path: str = field(default=f"{dataloc}/categories.json")
-    zaar_root_path: str = field(default=f"{dataloc}/train_symbol_fast.zarr")
+    zaar_root_path: str = field(
+        default="/storage/atlasAppRaja/library/kaggle/data/train_symbol_fast.zarr"
+    )
     feature_scaler_path: str = field(default=f"{dataloc}/feature_scaler.pkl")
-    index_path: str = field(default=f"{dataloc}/symbdf/symbdf_cat_train.parquet")
+    index_path: str = field(default=f"{dataloc}/symbdf_cat_train.parquet")
     # synchronizer = zarr.ProcessSynchronizer('/var/run/zarr.lock')
     # sampler_index_path: str = field(default="../data/symbdf/symbdf_cat_train.parquet")
 

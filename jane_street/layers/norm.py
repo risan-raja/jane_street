@@ -1,7 +1,5 @@
 import torch
 from torch import nn
-from torch.nn import functional as F
-from typing import List
 from .time_dist import TimeDistributedInterpolation
 from .gated_linear import GatedLinearUnit
 

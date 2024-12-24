@@ -140,3 +140,13 @@ quantiles:
 - 0.5
 - 0.7
 weight_decay: 0.0
+train:
+  batch_size: 128
+  index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_train.parquet
+val:
+  batch_size: 256
+  index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_val.parquet
+test:
+  batch_size: 256
+  index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_test.parquet
+data_dir: /storage/atlasAppRaja/library/kaggle/jane_street/data

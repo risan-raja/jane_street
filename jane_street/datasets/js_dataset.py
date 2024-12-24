@@ -104,7 +104,7 @@ class JSTrainDataset(Dataset):
         symbol_curr_data: ArrayLike = self.root[f"{symbol_id}/{end_date}"][:][
             :decoder_length, :
         ]  # type: ignore
-        static_covariates = self._to_tensor(np.array([symbol_id]), torch.int16).long()
+        # static_covariates = self._to_tensor(np.array([symbol_id]), torch.int16).long()
         encoder_reals: ArrayLike = self._to_tensor(
             self.real_scaler.fit_transform(
                 symbol_hist_data[:, self.weight_idx + self.feature_vars_idx]  # type: ignore
@@ -133,22 +133,23 @@ class JSTrainDataset(Dataset):
             ),
             torch.int16,
         ).long()
-        targets = self._to_tensor(symbol_curr_data[:, self.target_idx], torch.float32)  # type: ignore
-        weights = self._to_tensor(symbol_curr_data[:, self.weight_idx], torch.float32)  # type: ignore
+        targets = self._to_tensor(
+            symbol_curr_data[:, [self.target_idx, self.weight_idx]], torch.float32
+        )  # type: ignore
+        # weights = self._to_tensor(symbol_curr_data[:, self.weight_idx], torch.float32)  # type: ignore
         # Data is returned as (num_samples, time_steps, features)
         return (
             {
                 "encoder_length": encoder_length,
                 "decoder_length": decoder_length,
-                "static_covariates": static_covariates,
+                # "static_covariates": static_covariates,
                 "encoder_reals": encoder_reals,
                 "encoder_categoricals": encoder_categoricals,
                 "encoder_targets": encoder_targets,
                 "decoder_reals": decoder_reals,
                 "decoder_categoricals": decoder_categoricals,
-                "target_scale": torch.tensor([-5, 5], dtype=torch.float32),
             },
-            (targets, weights),
+            targets,
         )
 
 
@@ -163,7 +164,7 @@ def custom_collate_fn(
             decoder_lengths=torch.tensor(
                 [batch[0]["decoder_length"] for batch in batches], dtype=torch.long
             ),
-            groups=torch.stack([batch[0]["static_covariates"] for batch in batches]),
+            # groups=torch.stack([batch[0]["static_covariates"] for batch in batches]),
             encoder_reals=rnn.pad_sequence(
                 [batch[0]["encoder_reals"] for batch in batches], batch_first=True
             ),
@@ -181,10 +182,7 @@ def custom_collate_fn(
             encoder_targets=rnn.pad_sequence(
                 [batch[0]["encoder_targets"] for batch in batches], batch_first=True
             ),
-            target_scale=torch.stack([batch[0]["target_scale"] for batch in batches]),
+            # target_scale=torch.stack([batch[0]["target_scale"] for batch in batches]),
         ),
-        (
-            rnn.pad_sequence([batch[1][0] for batch in batches], batch_first=True),
-            rnn.pad_sequence([batch[1][1] for batch in batches], batch_first=True),
-        ),
+        rnn.pad_sequence([batch[1] for batch in batches], batch_first=True),
     )

@@ -27,3 +27,10 @@ dev-dependencies = [
     "ruff>=0.8.4",
     "tensorboard>=2.18.0",
 ]
+
+[tool.ruff]
+extend-exclude = [ 
+    "__init__.py",
+    "data/*",
+    "configs",
+    ]
