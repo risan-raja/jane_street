@@ -10,8 +10,17 @@ class SMAPE(MultiHorizonMetric):
     """
 
     def loss(self, y_pred, target_w):
-        target = target_w[..., 0]
-        y_pred = self.to_prediction(y_pred)
+        if target_w.ndim == 4:
+            target = target_w.squeeze(-1)[..., 0]
+        elif target_w.ndim == 3:
+            target = target_w[..., 0]
+        else:
+            raise ValueError(
+                f"Invalid target_w shape: {target_w.shape}\n y_pred shape: {y_pred.shape}"
+            )
+        # print(y_pred.shape)
+        if y_pred.ndim > 1:
+            y_pred = y_pred.mean(-1)
         loss = 2 * (y_pred - target).abs() / (y_pred.abs() + target.abs() + 1e-8)
         return loss
 
@@ -24,8 +33,18 @@ class MAPE(MultiHorizonMetric):
     """
 
     def loss(self, y_pred, target_w):
-        target = target_w[..., 0]
-        loss = (self.to_prediction(y_pred) - target).abs() / (target.abs() + 1e-8)
+        if target_w.ndim == 4:
+            target = target_w.squeeze(-1)[..., 0]
+        elif target_w.ndim == 3:
+            target = target_w[..., 0]
+        else:
+            raise ValueError(
+                f"Invalid target_w shape: {target_w.shape}\n y_pred shape: {y_pred.shape}"
+            )
+        # print(y_pred.shape)
+        if y_pred.ndim > 1:
+            y_pred = y_pred.mean(-1)
+        loss = (y_pred - target).abs() / (target.abs() + 1e-8)
         return loss
 
 
@@ -37,9 +56,18 @@ class MAE(MultiHorizonMetric):
     """
 
     def loss(self, y_pred, target_w):
-        target = target_w[..., 0]
-        # sample_weight = target_w[...,1]
-        loss = (self.to_prediction(y_pred) - target).abs()
+        if target_w.ndim == 4:
+            target = target_w.squeeze(-1)[..., 0]
+        elif target_w.ndim == 3:
+            target = target_w[..., 0]
+        else:
+            raise ValueError(
+                f"Invalid target_w shape: {target_w.shape}\n y_pred shape: {y_pred.shape}"
+            )
+        # print(y_pred.shape)
+        if y_pred.ndim > 1:
+            y_pred = y_pred.mean(-1)
+        loss = (y_pred - target).abs()
         return loss
 
 
@@ -51,14 +79,25 @@ class ZRMSE(MultiHorizonMetric):
     """
 
     def loss(self, y_pred, target_w):
-        target = target_w[..., 0]
-        sample_weight = target_w[..., 1]
-        y_pred = self.to_prediction(y_pred)
+        if target_w.ndim == 4:
+            target = target_w.squeeze(-1)[..., 0]
+            sample_weight = target_w.squeeze(-1)[..., 1]
+        elif target_w.ndim == 3:
+            target = target_w[..., 0]
+            sample_weight = target_w[..., 1]
+        else:
+            raise ValueError(
+                f"Invalid target_w shape: {target_w.shape}\n y_pred shape: {y_pred.shape}"
+            )
+        # print(y_pred.shape)
+        if y_pred.ndim > 1:
+            y_pred = y_pred.mean(-1)
+        # y_pred = self.to_prediction(y_pred)
         if sample_weight is None:
             sample_weight = torch.ones_like(target)
-        loss = (
-            1
-            - (sample_weight * (y_pred - target).pow(2)).sum()
+        # print(f'y_pred: {y_pred.shape}, target: {target.shape}, sample_weight: {sample_weight.shape}')
+        loss = 1 - (
+            (sample_weight * (y_pred - target).pow(2)).sum()
             / (sample_weight * target.pow(2)).sum()
         )
         return loss

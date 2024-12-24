@@ -94,26 +94,6 @@ x_categoricals:
 - feature_11
 - time_id
 - symbol_id
-embedding_sizes:
-  time_id:
-  - 968
-  - 64
-  symbol_id:
-  - 39
-  - 12
-  categoric:
-  - 25
-  - 10
-categorical_groups:
-  categoric:
-  - feature_09
-  - feature_10
-  - feature_11
-categorical_groups_name_index:
-  categoric:
-  - 0
-  - 1
-  - 2
 static_categoricals:
 - symbol_id
 dropout: 0.01
@@ -126,8 +106,8 @@ max_encoder_length: 968
 max_prediction_length: 968
 min_prediction_length: 1
 min_encoder_length: 1
-lstm_layers: 2
-n_heads: 8
+lstm_layers: 4
+n_heads: 4
 n_targets: 1
 output_size: 3
 causal_attention: true
@@ -140,13 +120,31 @@ quantiles:
 - 0.5
 - 0.7
 weight_decay: 0.0
+embedding_sizes:
+  feature_09:
+  - 22
+  - 9
+  feature_10:
+  - 9
+  - 5
+  feature_11:
+  - 31
+  - 11
+  time_id:
+  - 968
+  - 64
+  symbol_id:
+  - 39
+  - 12
+log_interval: 2
+log_val_interval: 1
 train:
-  batch_size: 128
+  batch_size: 64
   index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_train.parquet
 val:
-  batch_size: 256
+  batch_size: 32
   index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_val.parquet
 test:
-  batch_size: 256
+  batch_size: 32
   index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_test.parquet
 data_dir: /storage/atlasAppRaja/library/kaggle/jane_street/data

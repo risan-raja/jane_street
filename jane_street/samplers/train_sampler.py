@@ -92,7 +92,7 @@ class JSTrainDistributedSampler(DistributedSampler):
         return [str(elem.item()) for elem in tensor]
 
     def get_indices_epoch(self, g):
-        print("Accessed")
+        # print("Accessed")
         dates = self.epoch_dates
         time_steps = self.stringify(self.assign_time_steps(dates, g))
         dates = self.stringify(dates)
@@ -104,7 +104,7 @@ class JSTrainDistributedSampler(DistributedSampler):
                     & (self.index["decoder_length"] == time_step)
                 )["idx"].to_list()
             )
-        print("Indices Generated")
+        # print("Indices Generated")
         return indices
 
     @staticmethod
@@ -151,8 +151,8 @@ class JSTrainDistributedSampler(DistributedSampler):
         # subsample
         indices = indices[self.rank : self.total_size : self.num_replicas]
         assert len(indices) == self.num_samples
-        print("Indices Assigned ", len(indices))
+        # print("Indices Assigned ", len(indices))
         return iter(indices)
 
     def __len__(self):
-        return super().__len__()
+        return len(self.index)

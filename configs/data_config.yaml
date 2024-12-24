@@ -1,10 +1,10 @@
 train:
-  batch_size: 128
+  batch_size: 64
   index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_train.parquet
 val:
-  batch_size: 256
+  batch_size: 32
   index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_val.parquet
 test:
-  batch_size: 256
+  batch_size: 32
   index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_test.parquet
 data_dir: /storage/atlasAppRaja/library/kaggle/jane_street/data

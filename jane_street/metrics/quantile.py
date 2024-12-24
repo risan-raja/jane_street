@@ -93,10 +93,18 @@ class WeightedQuantileLoss(MultiHorizonMetric):
     def loss(self, y_pred: torch.Tensor, target_w: torch.Tensor) -> torch.Tensor:
         # calculate quantile loss
         losses = []
+        # print(f'y_pred: {y_pred[..., 0].shape}, target_w: {target_w.shape}')
+        if target_w.ndim == 4:
+            target = target_w.squeeze(-1)[..., 0]
+        elif target_w.ndim == 3:
+            target = target_w[..., 0]
+        else:
+            raise ValueError(f"Invalid target_w shape: {target_w.shape}")
+        # if target_w
         for i, q in enumerate(self.quantiles):
-            errors = target_w[..., 0] - y_pred[..., i]
+            errors = target - y_pred[..., i]
             losses.append(torch.max((q - 1) * errors, q * errors).unsqueeze(-1))
-        losses = 2 * torch.cat(losses, dim=2)
+        losses = 2 * torch.cat(losses, dim=1)
         return losses
 
     def to_prediction(self, y_pred: torch.Tensor) -> torch.Tensor:

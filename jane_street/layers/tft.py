@@ -27,9 +27,13 @@ class TFT(nn.Module, TupleOutputMixIn):
         )
         self.input_embeddings = MultiEmbedding(
             embedding_sizes=dict(config.embedding_sizes),
-            categorical_groups=dict(config.categorical_groups),
+            categorical_groups=dict(config.categorical_groups)
+            if hasattr(config, "categorical_groups")
+            else None,
             x_categoricals=list(config.x_categoricals),
-            categorical_groups_name_index=dict(config.categorical_groups_name_index),
+            categorical_groups_name_index=dict(config.categorical_groups_name_index)
+            if hasattr(config, "categorical_groups_name_index")
+            else None,
         )
         self.embedded_categoricals = self.input_embeddings.names()
         self.prescalers = nn.ModuleDict(
@@ -412,6 +416,9 @@ class TFT(nn.Module, TupleOutputMixIn):
         return self.to_network_output(
             prediction=output,
             attention=attn_output_weights,
+            static_variables=torch.cat(
+                [enc_static_variable_selection, dec_static_variable_selection], dim=1
+            ),
             encoder_variables=encoder_sparse_weights,
             decoder_variables=decoder_sparse_weights,
             encoder_lengths=encoder_lengths,
