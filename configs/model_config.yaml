@@ -96,7 +96,7 @@ x_categoricals:
 - symbol_id
 static_categoricals:
 - symbol_id
-dropout: 0.1
+dropout: 0.3
 time_varying_categoricals:
 - feature_09
 - feature_10
@@ -136,5 +136,5 @@ embedding_sizes:
   symbol_id:
   - 39
   - 12
-log_interval: 10
+log_interval: 5
 log_val_interval: 3

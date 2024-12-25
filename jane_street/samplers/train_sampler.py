@@ -34,7 +34,8 @@ class JSTrainDistributedSampler(DistributedSampler):
     def __init__(
         self,
         dataset: JSTrainDataset,
-        frequency: int = 2,
+        frequency_1: int = 2,
+        frequency_2: int = 4,
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
         shuffle: bool = True,
@@ -61,7 +62,8 @@ class JSTrainDistributedSampler(DistributedSampler):
         self.drop_last = drop_last
         # Since the previous day is used for prediction the data from the next
         # Day might creep into the same epoch. To avoid this we skip a day.
-        self.frequency = frequency
+        self.frequency_1 = frequency_1
+        self.frequency_2 = frequency_2
         self.shuffle = shuffle
         self.seed = seed
         self.date_min: str = self.index["end_date"].cast(pl.Int16).min()  # type: ignore
@@ -72,25 +74,28 @@ class JSTrainDistributedSampler(DistributedSampler):
 
     @property
     def date_skip(self) -> int:
-        return self.epoch % self.frequency
-
-    @property
-    def epoch_samples(self) -> int:
-        pass
+        return self.epoch % self.frequency_1
 
     @property
     def epoch_dates(self) -> Tensor:
-        return torch.arange(
+        f1_dates = torch.arange(
             int(self.date_min) + self.date_skip,
             int(self.date_max) + 1,
-            step=self.frequency,
+            step=self.frequency_1,
             dtype=torch.int16,
         )
+        f2_dates = torch.arange(
+            int(self.date_min) + self.date_skip + 1,
+            int(self.date_max) + 1,
+            step=self.frequency_2,
+            dtype=torch.int16,
+        )
+        return torch.cat([f1_dates, f2_dates], dim=0)
 
     def assign_time_steps(self, dates, g) -> Tensor:
-        time_steps = torch.arange(1, 969)[torch.randperm(968, generator=g)][
-            : dates.shape[0]
-        ]
+        time_steps_1 = torch.arange(1, 969)[torch.randperm(968, generator=g)]
+        time_steps_2 = torch.arange(1, 969)[torch.randperm(968, generator=g)]
+        time_steps = torch.cat([time_steps_1, time_steps_2], dim=0)[: dates.size(0)]
         time_steps[dates < 677] = time_steps[dates < 677].clip(1, 849)
         return time_steps
 

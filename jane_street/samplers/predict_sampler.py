@@ -1,3 +1,4 @@
+import torch
 from torch.utils.data import DistributedSampler
 from typing import Optional
 import math
@@ -41,6 +42,7 @@ class JSPredictDataSampler(DistributedSampler):
         shuffle: bool = False,
         seed: int = 0,
         drop_last: bool = False,
+        max_samples: int = 200000,
     ) -> None:
         if num_replicas is None:
             if not dist.is_available():
@@ -62,6 +64,11 @@ class JSPredictDataSampler(DistributedSampler):
         self.drop_last = drop_last
         self.shuffle = shuffle
         self.seed = seed
+        if max_samples is not None and shuffle:
+            self.index.sample(n=max_samples, seed=seed)
+        elif max_samples is not None and not shuffle:
+            self.index = self.index.head(n=max_samples)
+        self.indexes = self.index["idx"].to_list()
         if self.drop_last and len(self.index) % self.num_replicas != 0:  # type: ignore[arg-type]
             # Split to nearest available length that is evenly divisible.
             # This is to ensure each rank receives the same amount of data when
@@ -74,7 +81,17 @@ class JSPredictDataSampler(DistributedSampler):
         self.total_size = self.num_samples * self.num_replicas
 
     def __iter__(self):
-        indices = self.index["idx"].to_list()
+        if self.shuffle:
+            # deterministically shuffle based on epoch and seed
+            g = torch.Generator()
+            g.manual_seed(self.seed + self.epoch)
+            indices = torch.randperm(
+                len(self.index["idx"].to_list()), generator=g
+            ).tolist()  # type: ignore[arg-type]
+            indices = self.index["idx"].to_numpy()[indices].ravel().tolist()
+        else:
+            indices = self.index["idx"].to_list()  # type: ignore[arg-type]
+        # indices = self.index["idx"].to_list()
         # if not self.drop_last:
         # add extra samples to make it evenly divisible
         padding_size = self.total_size - len(indices)

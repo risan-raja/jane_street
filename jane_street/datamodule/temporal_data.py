@@ -45,14 +45,16 @@ class JSDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         self.val_dataset_metadata = JSDatasetMeta(index_path=self.val_index_path)
         self.val_dataset = JSTrainDataset(self.val_dataset_metadata)
-        self.val_sampler = JSPredictDataSampler(self.val_dataset, shuffle=False)
+        self.val_sampler = JSPredictDataSampler(
+            self.val_dataset, max_samples=39 * 968 * 10, shuffle=False
+        )
         return DataLoader(
             dataset=self.val_dataset,
             batch_size=self.val_batch_size,
             sampler=self.val_sampler,
             collate_fn=custom_collate_fn,
             pin_memory=False,
-            num_workers=8,
+            num_workers=16,
             drop_last=False,
         )
 

@@ -57,12 +57,14 @@ class TemporalFT(ppl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.RAdam(self.parameters(), lr=self.learning_rate)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", patience=5, factor=0.1
+            optimizer, mode="min", patience=3, factor=0.1
         )
         return {
             "optimizer": optimizer,
             "lr_scheduler": lr_scheduler,
             "monitor": "val_loss",
+            "interval": "epoch",
+            "frequency": 3,
         }
 
     def log(self, *args, **kwargs):
