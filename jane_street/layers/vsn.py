@@ -1,8 +1,7 @@
-from typing import Dict, List, Optional
+from typing import Dict
 from copy import deepcopy
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
 from .gated_residual import GatedResidualNetwork
 from .norm import ResampleNorm
 

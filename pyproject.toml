@@ -14,5 +14,23 @@ dependencies = [
     "scikit-learn>=1.5.2",
     "torch>=2.5.1",
     "torchmetrics>=1.6.0",
+    "wandb>=0.19.1",
     "zarr>=2.18.3",
 ]
+
+[tool.uv]
+link-mode = "copy"
+compile-bytecode = true
+dev-dependencies = [
+    "ipykernel>=6.29.5",
+    "pre-commit>=4.0.1",
+    "ruff>=0.8.4",
+    "tensorboard>=2.18.0",
+]
+
+[tool.ruff]
+extend-exclude = [ 
+    "__init__.py",
+    "data/*",
+    "configs",
+    ]
