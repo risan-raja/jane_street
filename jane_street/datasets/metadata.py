@@ -44,7 +44,7 @@ class JSDatasetMeta:
         Initializes the Zarr group and loads the JSON metadata files.
     """
 
-    dataloc = "/storage/atlasAppRaja/library/kaggle/jane_street/data"
+    dataloc = "/storage/atlasAppRaja/library/atlas/jane_street/data"
     date_data_dist_path: str = field(default=f"{dataloc}/date_data_dist_strict.json")
     date_symbol_path: str = field(default=f"{dataloc}/date_symbol_strict.json")
     symbols_prev_date_path: str = field(
@@ -52,7 +52,7 @@ class JSDatasetMeta:
     )
     categories_path: str = field(default=f"{dataloc}/categories.json")
     zaar_root_path: str = field(
-        default="/storage/atlasAppRaja/library/kaggle/data/train_symbol_fast.zarr"
+        default="/storage/atlasAppRaja/library/atlas/data/train_symbol_fast.zarr"
     )
     feature_scaler_path: str = field(default=f"{dataloc}/feature_scaler.pkl")
     index_path: str = field(default=f"{dataloc}/symbdf_cat_train.parquet")

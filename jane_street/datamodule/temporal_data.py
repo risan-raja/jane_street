@@ -9,6 +9,7 @@ from ..samplers import JSTrainDistributedSampler, JSPredictDataSampler
 class JSDataModule(pl.LightningDataModule):
     def __init__(self, config: DictConfig):
         super(JSDataModule, self).__init__()
+        self.config = config
         self.train_index_path = config.train.index_path
         self.val_index_path = config.val.index_path
         self.test_index_path = config.test.index_path
@@ -39,14 +40,16 @@ class JSDataModule(pl.LightningDataModule):
             collate_fn=custom_collate_fn,
             num_workers=16,
             pin_memory=True,
-            drop_last=True,
+            drop_last=False,
         )
 
     def val_dataloader(self):
-        self.val_dataset_metadata = JSDatasetMeta(index_path=self.val_index_path)
+        self.val_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
         self.val_dataset = JSTrainDataset(self.val_dataset_metadata)
         self.val_sampler = JSPredictDataSampler(
-            self.val_dataset, max_samples=39 * 968 * 10, shuffle=False
+            self.val_dataset,
+            max_samples=self.config.val_dataset_size,
+            shuffle=self.config.val_shuffle,
         )
         return DataLoader(
             dataset=self.val_dataset,
