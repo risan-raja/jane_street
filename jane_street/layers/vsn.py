@@ -125,3 +125,71 @@ class VariableSelectionNetwork(nn.Module):
                     outputs.size(0), 1, 1, device=outputs.device
                 )
         return outputs, sparse_weights
+
+
+class GroupVSN(nn.Module):
+    def __init__(
+        self,
+        group_id: str,
+        features: list[str],
+        input_sizes: dict[str, int],
+        hidden_size: int,
+        dropout: float,
+        context_size: int | None,
+        single_variable_grns: dict[str, GatedResidualNetwork],
+        is_context=False,
+    ):
+        super().__init__()
+        self.group_id = group_id
+        self.features = [f for f in features]
+        self.num_inputs = len(features)
+        self.input_sizes = input_sizes
+        self.hidden_size = hidden_size
+        self.dropout = dropout
+        self.context_size = context_size
+        self.single_variable_grns = single_variable_grns
+        self.total_input_size = sum(input_sizes.values())
+        self.is_context = is_context
+        if self.context_size is not None:
+            self.flattened_grn = GatedResidualNetwork(
+                self.total_input_size,
+                min(self.hidden_size, self.num_inputs),
+                self.num_inputs,
+                self.dropout,
+                self.context_size,
+                residual=False,
+            )
+        else:
+            self.flattened_grn = GatedResidualNetwork(
+                self.total_input_size,
+                min(self.hidden_size, self.num_inputs),
+                self.num_inputs,
+                self.dropout,
+                residual=False,
+            )
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(
+        self,
+        embedding: dict[str, torch.Tensor],
+        grn_outputs: dict[str, torch.Tensor] | None = None,
+        context: torch.Tensor | None = None,
+    ):
+        var_outputs = []
+        weight_inputs = []
+        for name in self.features:
+            variable_embedding = embedding[name]
+            weight_inputs.append(variable_embedding)
+            if self.is_context:
+                var_outputs.append(
+                    self.single_variable_grns[name](variable_embedding, context)
+                )
+            else:
+                var_outputs.append(grn_outputs[name])
+        var_outputs = torch.stack(var_outputs, dim=-1)
+        flat_embedding = torch.cat(weight_inputs, dim=-1)
+        sparse_weights = self.flattened_grn(flat_embedding, context)
+        sparse_weights = self.softmax(sparse_weights).unsqueeze(-2)
+        outputs = var_outputs * sparse_weights
+        outputs = outputs.sum(dim=-1)
+        return outputs, sparse_weights
