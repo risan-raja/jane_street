@@ -31,14 +31,17 @@ class GatedResidualNetwork(nn.Module):
             self.resample_norm = ResampleNorm(residual_size, self.output_size)
 
         self.fc1 = TimeDistributed(nn.Linear(self.input_size, self.hidden_size))
+        # self.fc1 = nn.Linear(self.input_size, self.hidden_size)
         self.elu = nn.ELU()
 
         if self.context_size is not None:
             self.context = TimeDistributed(
                 nn.Linear(self.context_size, self.hidden_size, bias=False)
             )
+            # self.context = nn.Linear(self.context_size, self.hidden_size, bias=False)
 
         self.fc2 = TimeDistributed(nn.Linear(self.hidden_size, self.hidden_size))
+        # self.fc2 = nn.Linear(self.hidden_size, self.hidden_size)
         self.init_weights()
 
         self.gate_norm = GateAddNorm(
