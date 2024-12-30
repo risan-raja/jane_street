@@ -15,6 +15,7 @@ class Projector(nn.Module):
         hidden_dims,
         hidden_layers,
         output_dim,
+        num_heads=2,
         kernel_size=3,
         is_delta=False,
     ):
@@ -37,7 +38,7 @@ class Projector(nn.Module):
         )
         self.is_delta = is_delta
         layers = [
-            nn.Linear(2 * enc_in, hidden_dims[0]),
+            nn.Linear(num_heads * enc_in, hidden_dims[0]),
             nn.ReLU(),
         ]  # Modified input size
         for i in range(hidden_layers - 1):

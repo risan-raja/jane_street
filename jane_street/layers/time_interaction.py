@@ -78,7 +78,9 @@ class TimeSeriesInteractionNetwork(nn.Module):
         self.shared_attn_linear = nn.Linear(
             self.channel_dim * 2, self.attn_dim * self.num_heads
         )
-        self.shared_attn_linear_output = nn.Linear(self.channel_dim, self.channel_dim)
+        self.shared_attn_linear_output = nn.Linear(
+            int(self.channel_dim * (self.num_heads / 2)), self.channel_dim
+        )
         self.shared_gate_layer = nn.Sequential(
             nn.Linear(self.channel_dim * 2, hidden_dim),
             nn.LayerNorm(hidden_dim),
@@ -105,6 +107,9 @@ class TimeSeriesInteractionNetwork(nn.Module):
         for u, v in edges:
             if (u, v) in self.initial_edge_weights.keys():
                 self.edge_weights[str((u, v))] = nn.Parameter(
+                    torch.tensor(self.initial_edge_weights[(u, v)])
+                )
+                self.edge_weights[str((v, u))] = nn.Parameter(
                     torch.tensor(self.initial_edge_weights[(u, v)])
                 )
 
@@ -171,7 +176,7 @@ class TimeSeriesInteractionNetwork(nn.Module):
             gate_vu = self.shared_gate_layer(concat_blocks_vu)
 
             edge_weight_uv = self.edge_weights[str((u, v))]
-            edge_weight_vu = self.edge_weights[str((u, v))]
+            edge_weight_vu = self.edge_weights[str((v, u))]
 
             interaction_out_uv = self.shared_interaction_layer_1(concat_blocks_uv)
             interaction_out_uv = self.shared_interaction_layer_2(
