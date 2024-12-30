@@ -66,20 +66,11 @@ class TimeSeriesInteractionNetwork(nn.Module):
             else (self.channel_dim // num_heads + 1) * num_heads
         )
 
-        # Replace MultiheadAttention with DSAttention
-        self.shared_attn_layer = DSAttention(
-            mask_flag=self.mask_flag,
-            attention_dropout=dropout_rate,
-            learnable_tau_delta=True,
-            num_heads=num_heads,
-            enc_in=self.channel_dim,
-        )
-
         self.shared_attn_linear = nn.Linear(
             self.channel_dim * 2, self.attn_dim * self.num_heads
         )
         self.shared_attn_linear_output = nn.Linear(
-            int(self.channel_dim * (self.num_heads / 2)), self.channel_dim
+            int(self.channel_dim * self.num_heads), self.channel_dim
         )
         self.shared_gate_layer = nn.Sequential(
             nn.Linear(self.channel_dim * 2, hidden_dim),
@@ -205,44 +196,22 @@ class TimeSeriesInteractionNetwork(nn.Module):
             B, T, D, C = attn_input_uv.shape
             attn_input_uv = attn_input_uv.view(B, T, D * C)
             attn_input_vu = attn_input_vu.view(B, T, D * C)
-            attn_input_uv = self.shared_attn_linear(attn_input_uv).reshape(
-                B, 2, T, self.num_heads, -1
-            )  # B,2,T,H,E
-            attn_input_vu = self.shared_attn_linear(attn_input_vu).reshape(
-                B, 2, T, self.num_heads, -1
-            )  # B,2,T,H,E
-            attn_output_uv, _ = self.shared_attn_layer(
-                attn_input_uv[:, 0, :, :, :],
-                attn_input_uv[:, 1, :, :, :],
-                attn_input_uv[:, 1, :, :, :],
-                attn_mask,
-            )  # B,T,H,E
-            attn_output_vu, _ = self.shared_attn_layer(
-                attn_input_vu[:, 0, :, :, :],
-                attn_input_vu[:, 1, :, :, :],
-                attn_input_vu[:, 1, :, :, :],
-                attn_mask,
-            )  # B,T,H,E
-
-            attn_output_uv = attn_output_uv.reshape(B, T, -1)  # B,T,H*E
-            attn_output_vu = attn_output_vu.reshape(B, T, -1)  # B,T,H*E
-            attn_output_uv = self.shared_attn_linear_output(attn_output_uv)  # B,T,C
-            attn_output_vu = self.shared_attn_linear_output(attn_output_vu)  # B,T,C
+            attn_input_uv = self.shared_attn_linear(attn_input_uv)
+            attn_input_vu = self.shared_attn_linear(attn_input_vu)
+            attn_input_uv = self.shared_attn_linear_output(attn_input_uv)  # B,T,C
+            attn_input_vu = self.shared_attn_linear_output(attn_input_vu)  # B,T,C
 
             # Since the parameters are shared and we are using symmetric aggregation,
             # we use the following shared formulation.
             weighted_interaction = (
-                (attn_output_uv + attn_output_vu)
-                / 2
-                * (edge_weight_uv + edge_weight_vu)
-                / 2
-                * (gate_uv + gate_vu)
-                / 2
+                attn_input_uv * edge_weight_uv * gate_uv
+                + attn_input_vu * edge_weight_vu * gate_vu
             )
             out_blocks[u] = out_blocks[u] + weighted_interaction
             out_blocks[v] = out_blocks[v] + weighted_interaction
             processed_edges.add((u, v))
             l1_edge_weight += torch.abs(edge_weight_uv).sum()
+            l1_edge_weight += torch.abs(edge_weight_vu).sum()
         reduced_out_blocks = []
 
         for block, output_linear in zip(out_blocks, self.output_linear):
