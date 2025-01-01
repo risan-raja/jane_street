@@ -411,8 +411,10 @@ class TFT(nn.Module, TupleOutputMixIn):
         )
         attn_output = self.post_attn_gate_norm(attn_output, dec_attn_input)
         output = self.pos_wise_ff(attn_output)
-        output = self.pre_output_gate_norm(output, lstm_output_decoder)
-        output = self.revin[self.target_name](self.output_layer(output), mode="denorm")
+        output = self.pre_output_gate_norm(output, lstm_output_decoder)  # B x T x 3
+        output = self.revin[self.target_name](output, mode="denorm")
+        output = self.output_layer(output)
+        decoder_lengths = torch.ones_like(decoder_lengths)
         return self.to_network_output(
             prediction=output,
             # attention=attn_output_weights,

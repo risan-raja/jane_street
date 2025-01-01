@@ -79,9 +79,9 @@ class MSSE(MultiHorizonMetric):
     Defined as ``(y_pred - target).abs()``
     """
 
-    def __init__(self, reduction="mean", **kwargs):
+    def __init__(self, reduction="sum", **kwargs):
         self.reduction = reduction
-        super().__init__(reduction="mean", **kwargs)
+        super().__init__(reduction="sum", **kwargs)
         self.reduction = reduction
 
     def to_prediction(self, y_pred):
@@ -91,7 +91,7 @@ class MSSE(MultiHorizonMetric):
                 torch.ones((b, t, 1), device=y_pred.device) * q for q in [0.3, 0.5, 0.7]
             ]
             quantileV = torch.cat(quantile_vectors, dim=-1)
-            return torch.sum((y_pred * quantileV) / 3, dim=-1)
+            return torch.sum((y_pred * quantileV) / 1.5, dim=-1)
         elif c == 1:
             return y_pred.squeeze(-1)
         else:
@@ -111,9 +111,10 @@ class MSSE(MultiHorizonMetric):
         # print(y_pred.shape)
         # if y_pred.ndim > 1:
         #     y_pred = y_pred.mean(-1)
-        numerator = (((self.to_prediction(y_pred) - target) ** 2) * sample_weight).sum()
-        denominator = (sample_weight * target).sum()
-        return -(numerator / denominator)
+        norm_wts = sample_weight / torch.linalg.norm(sample_weight)
+        numerator = (((self.to_prediction(y_pred) - target) ** 2) * norm_wts).sum()
+        # denominator = (sample_weight * target).sum()
+        return ((numerator) / norm_wts.sum()) ** 0.5
 
 
 class MSE(MultiHorizonMetric):
@@ -128,24 +129,49 @@ class MSE(MultiHorizonMetric):
         super().__init__(reduction="mean", **kwargs)
         self.reduction = reduction
 
+    def to_prediction(self, y_pred):
+        b, t, c = y_pred.shape
+        if c == 3:
+            quantile_vectors = [
+                torch.ones((b, t, 1), device=y_pred.device) * q for q in [0.3, 0.5, 0.7]
+            ]
+            quantileV = torch.cat(quantile_vectors, dim=-1)
+            return torch.sum((y_pred * quantileV) / 1.5, dim=-1)
+        elif c == 1:
+            return y_pred.squeeze(-1)
+        else:
+            return y_pred.mean(-1)
+
     def loss(self, y_pred, target_w):
-        print(target_w.shape)
+        # print(target_w.shape)
         if target_w.ndim == 4:
             # print("hit")
             target = target_w.squeeze(-1)[..., 0]
-            weights = target_w.squeeze(-1)[..., 1]
+            # weights = target_w.squeeze(-1)[..., 1]
         elif target_w.ndim == 3:
             target = target_w[..., 0]
-            weights = target_w[..., 1]
+            # weights = target_w[..., 1]
         else:
             raise ValueError(
                 f"Invalid target_w shape: {target_w.shape}\n y_pred shape: {y_pred.shape}"
             )
         # print(y_pred.shape)
-        if y_pred.ndim > 1:
-            y_pred = y_pred.mean(-1)
-        loss = ((y_pred - target) ** 2) * weights
+        # if y_pred.ndim > 1:
+        #     y_pred = y_pred.mean(-1)
+        loss = (self.to_prediction(y_pred) - target) ** 2
         return loss
+
+
+class RMSE(MSE):
+    """
+    Root Mean Square error.
+
+    Defined as ``(y_pred - target).abs()``
+    """
+
+    def loss(self, y_pred, target_w):
+        loss = super().loss(y_pred, target_w)
+        return loss**0.5
 
 
 class ZRMSS(MultiHorizonMetric):

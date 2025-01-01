@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import torch
 from ..layers.tft import TFT
 from ..metrics.quantile import WeightedQuantileLoss
-from ..metrics.point import SMAPE, MSSE, MAE
+from ..metrics.point import SMAPE, MSSE, MAE, MSE
 from ..utils.outputs import detach, create_mask, integer_histogram, masked_op
 from ..utils.pad import padded_stack
 
@@ -26,10 +26,11 @@ class TemporalFT(ppl.LightningModule):
         self.save_hyperparameters(master_conf)
         self.config = master_conf
         self.model = TFT(master_conf)
-        self.loss = WeightedQuantileLoss(master_conf.quantiles)
-        self.wt_loss = MSSE()
+        self.wq_loss = WeightedQuantileLoss(master_conf.quantiles)
+        self.r_loss = MSSE()
+        self.loss = MSE()
         # self.wt_loss = ZRMSS(master_conf.quantiles)
-        self.logging_metrics = [SMAPE(), MAE(), self.wt_loss]
+        self.logging_metrics = [SMAPE(), MAE(), self.wq_loss, self.r_loss]
         # self.logging_metrics = [SMAPE()]
         self.training_step_outputs = []
         self.validation_step_outputs = []

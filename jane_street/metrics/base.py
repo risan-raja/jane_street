@@ -477,6 +477,8 @@ class MultiHorizonMetric(Metric):
             reduction = self.reduction
         if reduction == "none":
             return losses  # return immediately, no checks
+        elif reduction == "sum":
+            loss = losses.sum()
         elif reduction == "mean":
             loss = losses.sum() / lengths.sum()
         elif reduction == "sqrt-mean":
