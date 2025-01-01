@@ -39,7 +39,7 @@ class JSTrainDistributedSampler(DistributedSampler):
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
         shuffle: bool = True,
-        seed: int = 0,
+        seed: int = 42,
         drop_last: bool = False,
     ) -> None:
         if num_replicas is None:
@@ -66,7 +66,7 @@ class JSTrainDistributedSampler(DistributedSampler):
         self.frequency_2 = frequency_2
         self.shuffle = shuffle
         self.seed = seed
-        self.date_min: str = self.index["end_date"].cast(pl.Int16).min()  # type: ignore
+        self.date_min: str = self.index["end_date"].cast(pl.Int16).min() + 600  # type: ignore
         self.date_max: str = self.index["end_date"].cast(pl.Int16).max()
         self.date_symbols: pl.DataFrame = self.index.group_by("end_date").agg(
             pl.col("symbol_id").n_unique().alias("n_symbols")

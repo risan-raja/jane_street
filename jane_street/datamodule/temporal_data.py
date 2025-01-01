@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 from typing import Optional
 from torch.utils.data import DataLoader
 from omegaconf import DictConfig
-from ..datasets import JSTrainDataset, JSDatasetMeta, custom_collate_fn
+from ..datasets import JSTSDataset, JSDatasetMeta, custom_collate_fn
 from ..samplers import JSTrainDistributedSampler, JSPredictDataSampler
 
 
@@ -22,16 +22,16 @@ class JSDataModule(pl.LightningDataModule):
             self.train_dataset_metadata = JSDatasetMeta(
                 index_path=self.train_index_path
             )
-            self.train_dataset = JSTrainDataset(self.train_dataset_metadata)
+            self.train_dataset = JSTSDataset(self.train_dataset_metadata)
             self.val_dataset_metadata = JSDatasetMeta(index_path=self.val_index_path)
-            self.val_dataset = JSTrainDataset(self.val_dataset_metadata)
+            self.val_dataset = JSTSDataset(self.val_dataset_metadata)
         if stage == "test":
             self.test_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
-            self.test_dataset = JSTrainDataset(self.test_dataset_metadata)
+            self.test_dataset = JSTSDataset(self.test_dataset_metadata)
 
     def train_dataloader(self):
         self.train_dataset_metadata = JSDatasetMeta(index_path=self.train_index_path)
-        self.train_dataset = JSTrainDataset(self.train_dataset_metadata)
+        self.train_dataset = JSTSDataset(self.train_dataset_metadata)
         self.train_sampler = JSTrainDistributedSampler(self.train_dataset)
         return DataLoader(
             dataset=self.train_dataset,
@@ -45,7 +45,7 @@ class JSDataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         self.val_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
-        self.val_dataset = JSTrainDataset(self.val_dataset_metadata)
+        self.val_dataset = JSTSDataset(self.val_dataset_metadata)
         self.val_sampler = JSPredictDataSampler(
             self.val_dataset,
             max_samples=self.config.val_dataset_size,
@@ -63,7 +63,7 @@ class JSDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         self.test_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
-        self.test_dataset = JSTrainDataset(self.test_dataset_metadata)
+        self.test_dataset = JSTSDataset(self.test_dataset_metadata)
         self.test_sampler = JSPredictDataSampler(self.test_dataset, shuffle=False)
         return DataLoader(
             dataset=self.test_dataset,

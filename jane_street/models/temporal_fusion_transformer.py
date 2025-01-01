@@ -212,6 +212,15 @@ class TemporalFT(ppl.LightningModule):
             sync_dist=True,
         )
         self.log(
+            f"hp/{self.current_stage}_loss",
+            loss,
+            # prog_bar=True,
+            on_step=True,
+            on_epoch=True,
+            batch_size=len(x["decoder_lengths"]),
+            sync_dist=True,
+        )
+        self.log(
             f"{self.current_stage}_max_decoder_length",
             int(x["decoder_lengths"].max().item()),
             on_step=True,

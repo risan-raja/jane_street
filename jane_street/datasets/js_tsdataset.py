@@ -8,9 +8,15 @@ from sklearn.compose import ColumnTransformer
 from typing import Any
 
 
-class JSTrainDataset(Dataset):
-    def __init__(self, dataset_metadata: JSDatasetMeta, hist_concat=False, strict=True):
-        super(JSTrainDataset, self).__init__()
+class JSTSDataset(Dataset):
+    def __init__(
+        self,
+        dataset_metadata: JSDatasetMeta,
+        hist_concat=False,
+        strict=True,
+        lookback_sampling=4,
+    ):
+        super(JSTSDataset, self).__init__()
         self.metadata = dataset_metadata
         self.responder_vars_idx = [84, 85, 86, 87, 88, 89, 90, 91, 92]
         self.categorical_vars_idx = [2, 3, 14, 15, 16]
@@ -18,6 +24,7 @@ class JSTrainDataset(Dataset):
         self.time_vars_idx = [0, 1, 2]
         self.symbol_vars_idx = 3
         self.static_covariate_idx = [3]
+        self.lookback_sampling = lookback_sampling
         self.target_idx = [89]
         self.feature_vars_idx = [
             i
@@ -28,7 +35,10 @@ class JSTrainDataset(Dataset):
             + self.time_vars_idx
             + [self.symbol_vars_idx]
             + self.target_idx
+            + self.weight_idx
         ]
+        # Adding time_idx and date_id
+        self.feature_vars_idx = self.feature_vars_idx
         self.hist_concat = hist_concat
         self.strict = strict
         # Feature 09, 10, 11 are ordinal categorical variables with variable scale
@@ -79,6 +89,10 @@ class JSTrainDataset(Dataset):
         self.index = self.metadata.index
         self.sampler_index = self.metadata.sampler_index
         self.root = self.metadata.root
+        self.date_id_scaler = StandardScaler()
+        self.date_id_scaler.fit(np.arange(0, 1900).reshape(-1, 1))
+        self.time_idx_scaler = StandardScaler()
+        self.time_idx_scaler.fit(np.arange(0, 1854468).reshape(-1, 1))
         self.real_scaler = StandardScaler()
 
     def __len__(self):
@@ -99,17 +113,44 @@ class JSTrainDataset(Dataset):
         decoder_length = self._to_tensor(
             int(index[self.index_keys["decoder_length"]]), torch.int16
         )
-        symbol_hist_data: ArrayLike = self.root[f"{symbol_id}/{start_date}"][:]  # type: ignore
+        symbol_hist_data: ArrayLike = self.root[f"{symbol_id}/{start_date}"].oindex[
+            :: self.lookback_sampling
+        ]  # type: ignore
+        encoder_length = (encoder_length / encoder_length) * symbol_hist_data.shape[0]
         symbol_curr_data: ArrayLike = self.root[f"{symbol_id}/{end_date}"][:][
             :decoder_length, :
         ]  # type: ignore
-        # static_covariates = self._to_tensor(np.array([symbol_id]), torch.int16).long()
+        # encoder_reals: ArrayLike = self._to_tensor(
+        #     self.real_scaler.fit_transform(
+        #         np.diff(symbol_hist_data[:, self.feature_vars_idx], n=1, prepend=0)  # type: ignore
+        #     ),  # type: ignore
+        #     torch.float32,
+        # )
         encoder_reals: ArrayLike = self._to_tensor(
             self.real_scaler.fit_transform(
-                symbol_hist_data[:, self.weight_idx + self.feature_vars_idx]  # type: ignore
+                symbol_hist_data[:, self.feature_vars_idx]  # type: ignore
             ),  # type: ignore
             torch.float32,
         )
+        enc_date_id = self._to_tensor(
+            self.date_id_scaler.transform(
+                symbol_hist_data[:, 1].reshape(-1, 1)
+            ).ravel(),
+            torch.float32,
+        )
+        enc_time_idx = self._to_tensor(
+            self.time_idx_scaler.transform(
+                symbol_hist_data[:, 0].reshape(-1, 1)
+            ).ravel(),
+            torch.float32,
+        )
+        enc_wts = self._to_tensor(
+            symbol_hist_data[:, self.weight_idx], torch.float32
+        ).view(-1, 1)
+        enc_date_time = torch.cat(
+            [enc_date_id.unsqueeze(-1), enc_time_idx.unsqueeze(-1)], dim=-1
+        )
+        encoder_reals = torch.cat([enc_date_time, enc_wts, encoder_reals], dim=-1)
         encoder_targets = self._to_tensor(
             symbol_hist_data[:, self.responder_vars_idx],  # type: ignore
             torch.float32,  # type: ignore
@@ -120,12 +161,35 @@ class JSTrainDataset(Dataset):
             ),
             dtype=torch.int16,
         ).long()
+        # decoder_reals = self._to_tensor(
+        #     self.real_scaler.transform(
+        #         np.diff(symbol_curr_data[:, self.feature_vars_idx], n=1, prepend=0)  # type: ignore
+        #     ),
+        #     torch.float32,
+        # )
         decoder_reals = self._to_tensor(
-            self.real_scaler.transform(
-                symbol_curr_data[:, self.weight_idx + self.feature_vars_idx]  # type: ignore
-            ),
+            self.real_scaler.transform(symbol_curr_data[:, self.feature_vars_idx]),
             torch.float32,
         )
+        dec_date_id = self._to_tensor(
+            self.date_id_scaler.transform(
+                symbol_curr_data[:, 1].reshape(-1, 1)
+            ).ravel(),
+            torch.float32,
+        )
+        dec_time_idx = self._to_tensor(
+            self.time_idx_scaler.transform(
+                symbol_curr_data[:, 0].reshape(-1, 1)
+            ).ravel(),
+            torch.float32,
+        )
+        dec_wts = self._to_tensor(
+            symbol_curr_data[:, self.weight_idx], torch.float32
+        ).view(-1, 1)
+        dec_date_time = torch.cat(
+            [dec_date_id.unsqueeze(-1), dec_time_idx.unsqueeze(-1)], dim=-1
+        )
+        decoder_reals = torch.cat([dec_date_time, dec_wts, decoder_reals], dim=-1)
         decoder_categoricals = self._to_tensor(
             self.categorical_encoder.fit_transform(
                 symbol_curr_data[:, self.categorical_vars_idx]  # type: ignore
@@ -133,15 +197,15 @@ class JSTrainDataset(Dataset):
             torch.int16,
         ).long()
         targets = self._to_tensor(
-            symbol_curr_data[:, [self.target_idx, self.weight_idx]], torch.float32
+            symbol_curr_data[-1:, [self.target_idx, self.weight_idx]], torch.float32
         )  # type: ignore
+        # encoder_length = torch.ones_like(encoder_length) * self.max_lookback
         # weights = self._to_tensor(symbol_curr_data[:, self.weight_idx], torch.float32)  # type: ignore
-        # Data is returned as (num_samples, time_steps, features)
+        # Data is returned as (num_samples, 1, features)
         return (
             {
                 "encoder_length": encoder_length,
                 "decoder_length": decoder_length,
-                # "static_covariates": static_covariates,
                 "encoder_reals": encoder_reals,
                 "encoder_categoricals": encoder_categoricals,
                 "encoder_targets": encoder_targets,
