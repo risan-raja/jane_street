@@ -6,9 +6,9 @@ import torch.distributed as dist
 from ..datasets.js_dataset import JSTrainDataset
 
 
-class JSPredictDataSampler(DistributedSampler):
+class JSTrainDataSampler(DistributedSampler):
     """
-    JSPredictDataSampler is a custom distributed sampler for prediction datasets.
+    JSTrainDataSampler is a custom distributed sampler for prediction datasets.
     This sampler ensures that each process in a distributed setting gets a unique subset of the dataset.
     It supports shuffling and dropping the last incomplete batch if necessary.
         dataset (JSTrainDataset): The dataset to sample from.
@@ -39,10 +39,9 @@ class JSPredictDataSampler(DistributedSampler):
         dataset: JSTrainDataset,
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
-        shuffle: bool = False,
-        seed: int = 0,
-        drop_last: bool = False,
-        max_samples: int = 200000,
+        shuffle: bool = True,
+        seed: int = 42,
+        drop_last: bool = True,
     ) -> None:
         if num_replicas is None:
             if not dist.is_available():
@@ -57,18 +56,16 @@ class JSPredictDataSampler(DistributedSampler):
                 f"Invalid rank {rank}, rank should be in the interval [0, {num_replicas - 1}]"
             )
         self.dataset = dataset
-        self.index = dataset.sampler_index
+        self.mindex = dataset.sampler_index
         self.num_replicas = num_replicas
         self.rank = rank
         self.epoch = 0
         self.drop_last = drop_last
         self.shuffle = shuffle
         self.seed = seed
-        if max_samples is not None and shuffle:
-            self.index = self.index.sample(n=max_samples, seed=seed)
-        elif max_samples is not None and not shuffle:
-            self.index = self.index.head(n=max_samples)
-        self.indexes = self.index["idx"].to_list()
+        # self.index = self.index.sample(n=4_900_000, seed=seed)
+        # self.indexes = self.index["idx"].to_list()
+
         if self.drop_last and len(self.index) % self.num_replicas != 0:  # type: ignore[arg-type]
             # Split to nearest available length that is evenly divisible.
             # This is to ensure each rank receives the same amount of data when
@@ -79,6 +76,10 @@ class JSPredictDataSampler(DistributedSampler):
         else:
             self.num_samples = math.ceil(len(self.index) / self.num_replicas)  # type: ignore[arg-type]
         self.total_size = self.num_samples * self.num_replicas
+
+    @property
+    def index(self):
+        return self.mindex.sample(n=4_900_000, seed=self.seed + self.epoch)
 
     def __iter__(self):
         if self.shuffle:

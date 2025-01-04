@@ -116,7 +116,9 @@ class JSTSDataset(Dataset):
         symbol_hist_data: ArrayLike = self.root[f"{symbol_id}/{start_date}"].oindex[
             :: self.lookback_sampling
         ]  # type: ignore
-        encoder_length = (encoder_length / encoder_length) * symbol_hist_data.shape[0]
+        encoder_length = (
+            (encoder_length / encoder_length) * symbol_hist_data.shape[0]
+        ).type(torch.int16)
         symbol_curr_data: ArrayLike = self.root[f"{symbol_id}/{end_date}"][:][
             :decoder_length, :
         ]  # type: ignore

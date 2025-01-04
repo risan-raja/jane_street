@@ -34,13 +34,13 @@ class JSTrainDistributedSampler(DistributedSampler):
     def __init__(
         self,
         dataset: JSTrainDataset,
-        frequency_1: int = 2,
-        frequency_2: int = 4,
+        frequency_1: int = 1,
+        frequency_2: int = 3,
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
         shuffle: bool = True,
         seed: int = 42,
-        drop_last: bool = False,
+        drop_last: bool = True,
     ) -> None:
         if num_replicas is None:
             if not dist.is_available():
@@ -66,7 +66,7 @@ class JSTrainDistributedSampler(DistributedSampler):
         self.frequency_2 = frequency_2
         self.shuffle = shuffle
         self.seed = seed
-        self.date_min: str = self.index["end_date"].cast(pl.Int16).min() + 600  # type: ignore
+        self.date_min: str = self.index["end_date"].cast(pl.Int16).min() + 672  # type: ignore
         self.date_max: str = self.index["end_date"].cast(pl.Int16).max()
         self.date_symbols: pl.DataFrame = self.index.group_by("end_date").agg(
             pl.col("symbol_id").n_unique().alias("n_symbols")
@@ -93,6 +93,7 @@ class JSTrainDistributedSampler(DistributedSampler):
         return torch.cat([f1_dates, f2_dates], dim=0)
 
     def assign_time_steps(self, dates, g) -> Tensor:
+        g.manual_seed(self.seed + self.epoch + self.rank)
         time_steps_1 = torch.arange(1, 969)[torch.randperm(968, generator=g)]
         time_steps_2 = torch.arange(1, 969)[torch.randperm(968, generator=g)]
         time_steps = torch.cat([time_steps_1, time_steps_2], dim=0)[: dates.size(0)]

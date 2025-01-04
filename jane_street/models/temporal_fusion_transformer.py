@@ -6,7 +6,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from ..layers.tft import TFT
-from ..metrics.quantile import WeightedQuantileLoss
+
+# from ..metrics.quantile import WeightedQuantileLoss
+# from ..metrics.r2score import WeightedZeroMeanR2Score
 from ..metrics.point import SMAPE, MSSE, MAE, MSE
 from ..utils.outputs import detach, create_mask, integer_histogram, masked_op
 from ..utils.pad import padded_stack
@@ -26,11 +28,13 @@ class TemporalFT(ppl.LightningModule):
         self.save_hyperparameters(master_conf)
         self.config = master_conf
         self.model = TFT(master_conf)
-        self.wq_loss = WeightedQuantileLoss(master_conf.quantiles)
+        # self.wq_loss = WeightedQuantileLoss(master_conf.quantiles)
         self.r_loss = MSSE()
         self.loss = MSE()
+        # self.train_weighted_r2 = WeightedZeroMeanR2Score()
+        # self.val_weighted_r2 = WeightedZeroMeanR2Score()
         # self.wt_loss = ZRMSS(master_conf.quantiles)
-        self.logging_metrics = [SMAPE(), MAE(), self.wq_loss, self.r_loss]
+        self.logging_metrics = [SMAPE(), MAE(), self.r_loss]
         # self.logging_metrics = [SMAPE()]
         self.training_step_outputs = []
         self.validation_step_outputs = []
@@ -138,16 +142,21 @@ class TemporalFT(ppl.LightningModule):
         #     # self.log_interpretation(self.training_step_output
         #     self.training_step_outputs.clear()
         # self.on_train_epoch_end()
+        # self.train_weighted_r2.update(out["prediction"].detach().squeeze(), y.detach().squeeze()[...,0], y.detach().squeeze()[...,1])
         return log
 
     def on_train_epoch_end(self):
         self.on_epoch_end(self.training_step_outputs)
+        # train_r2 = self.train_weighted_r2.compute()
         self.training_step_outputs.clear()
+        # self.log("hp/train_weighted_r2", train_r2, sync_dist=True)
+        # self.train_weighted_r2.reset()
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         log, out = self.step(x, y, batch_idx)
         log.update(self.create_log(x, y, out, batch_idx))
+        # self.val_weighted_r2.update(out["prediction"].detach().squeeze(), y.squeeze()[...,0], y.squeeze()[...,1])
         self.validation_step_outputs.append(log)
         if self.global_step % self.log_interval == 0:
             self.log_metrics(y, out, batch_idx)
@@ -168,6 +177,9 @@ class TemporalFT(ppl.LightningModule):
 
     def on_validation_epoch_end(self):
         self.on_epoch_end(self.validation_step_outputs)
+        # val_r2 = self.val_weighted_r2.compute()
+        # self.log("hp/val_weighted_r2", val_r2, sync_dist=True)
+        # self.val_weighted_r2.reset()
         self.validation_step_outputs.clear()
 
     def test_step(self, batch, batch_idx):
@@ -191,17 +203,6 @@ class TemporalFT(ppl.LightningModule):
         out = self(x)
         prediction = out["prediction"]
         loss = self.loss(prediction, y)
-
-        # if self.global_step < 20 and self.current_stage != "val":
-        #     self.log(
-        #         "val_loss",
-        #         loss,
-        #         prog_bar=True,
-        #         on_step=True,
-        #         on_epoch=True,
-        #         batch_size=len(x["decoder_lengths"]),
-        #         sync_dist=True,
-        #     )
         self.log(
             f"{self.current_stage}_loss",
             loss,
@@ -220,14 +221,14 @@ class TemporalFT(ppl.LightningModule):
             batch_size=len(x["decoder_lengths"]),
             sync_dist=True,
         )
-        self.log(
-            f"{self.current_stage}_max_decoder_length",
-            int(x["decoder_lengths"].max().item()),
-            on_step=True,
-            on_epoch=True,
-            batch_size=len(x["decoder_lengths"]),
-            sync_dist=True,
-        )
+        # self.log(
+        #     f"{self.current_stage}_max_decoder_length",
+        #     int(x["decoder_lengths"].max().item()),
+        #     on_step=True,
+        #     on_epoch=True,
+        #     batch_size=len(x["decoder_lengths"]),
+        #     sync_dist=True,
+        # )
         # self.log
         # self.log_metrics()
         log = {"loss": loss, "n_samples": x["decoder_lengths"].size(0)}

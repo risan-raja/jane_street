@@ -3,7 +3,7 @@ from typing import Optional
 from torch.utils.data import DataLoader
 from omegaconf import DictConfig
 from ..datasets import JSTSDataset, JSDatasetMeta, custom_collate_fn
-from ..samplers import JSTrainDistributedSampler, JSPredictDataSampler
+from ..samplers import JSPredictDataSampler, JSTrainDataSampler
 
 
 class JSDataModule(pl.LightningDataModule):
@@ -32,15 +32,15 @@ class JSDataModule(pl.LightningDataModule):
     def train_dataloader(self):
         self.train_dataset_metadata = JSDatasetMeta(index_path=self.train_index_path)
         self.train_dataset = JSTSDataset(self.train_dataset_metadata)
-        self.train_sampler = JSTrainDistributedSampler(self.train_dataset)
+        self.train_sampler = JSTrainDataSampler(self.train_dataset)
         return DataLoader(
             dataset=self.train_dataset,
             batch_size=self.train_batch_size,
             sampler=self.train_sampler,
             collate_fn=custom_collate_fn,
-            num_workers=16,
+            num_workers=24,
             pin_memory=True,
-            drop_last=False,
+            drop_last=True,
         )
 
     def val_dataloader(self):
