@@ -31,31 +31,31 @@ class CategoricalFeatureGraph(nn.Module):
 
 
 class FeatureGraph(nn.Module):
-    def __init__(self, configs: DictConfig):
+    def __init__(self, config: DictConfig):
         super().__init__()
-        self.configs = configs
-        self.hidden_real_size = configs.hidden_real_size
-        self.hidden_cat_size = configs.hidden_cat_size
-        self.feature_groups = configs.feature_groups
-        self.responder_groups = configs.responder_groups
-        self.context_group_features = configs.context_group
+        self.configs = config
+        self.hidden_real_size = config.hidden_real_size
+        self.hidden_cat_size = config.hidden_cat_size
+        self.feature_groups = config.feature_groups
+        self.responder_groups = config.responder_groups
+        self.context_group_features = config.context_group
         self.major_groups = len(self.feature_groups)
-        self.features = configs.features
-        self.all_reals = configs.all_reals
-        self.responders = configs.responders
-        self.cat_features = configs.cat_features
-        self.dropout = configs.droup_out
-        self.group_hidden_size = configs.group_hidden_size
-        self.cat_feature_graph = CategoricalFeatureGraph(configs)
-        self.feature_group_edge_weights = configs.feature_group_edge_weights
-        self.temporal_embedding_dim = configs.temporal_embedding_dim
-        self.context_size = configs.group_hidden_size + self.temporal_embedding_dim
-        self.num_heads = configs.num_heads
-        self.time_features = configs.time_features
-        self.feature_group_edges = configs.feature_group_edges
-        self.responder_group_edges = configs.responder_group_edges
-        self.responder_group_edge_weights = configs.responder_group_edge_weights
-        self.num_projection_layers = configs.num_projection_layers
+        self.features = config.features
+        self.all_reals = config.all_reals
+        self.responders = config.responders
+        self.cat_features = config.cat_features
+        self.dropout = config.droup_out
+        self.group_hidden_size = config.group_hidden_size
+        self.cat_feature_graph = CategoricalFeatureGraph(config)
+        self.feature_group_edge_weights = config.feature_group_edge_weights
+        self.temporal_embedding_dim = config.temporal_embedding_dim
+        self.context_size = config.group_hidden_size + self.temporal_embedding_dim
+        self.num_heads = config.num_heads
+        self.time_features = config.time_features
+        self.feature_group_edges = config.feature_group_edges
+        self.responder_group_edges = config.responder_group_edges
+        self.responder_group_edge_weights = config.responder_group_edge_weights
+        self.num_projection_layers = config.num_projection_layers
         self.real_value_embeddings = nn.ModuleDict(
             {
                 name: GatedResidualNetwork(
