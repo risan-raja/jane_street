@@ -5,6 +5,8 @@ from .gated_residual import GatedResidualNetwork
 from .vsn import GroupVSN
 from .star import STAR
 from .tsi import TimeSeriesInteractionNetwork
+from .embeddings import TemporalEmbeddingLayer, TemporalPosEmbeddings
+from .cross_attn import OptimizedCrossAttention
 
 
 class CategoricalFeatureGraph(nn.Module):
@@ -36,8 +38,7 @@ class FeatureGraph(nn.Module):
         self.hidden_cat_size = configs.hidden_cat_size
         self.feature_groups = configs.feature_groups
         self.responder_groups = configs.responder_groups
-        self.context_group = configs.context_group
-        # self.feature_groups = [g for g in configs.feature_groups] # safety
+        self.context_group_features = configs.context_group
         self.major_groups = len(self.feature_groups)
         self.features = configs.features
         self.all_reals = configs.all_reals
@@ -46,8 +47,15 @@ class FeatureGraph(nn.Module):
         self.dropout = configs.droup_out
         self.group_hidden_size = configs.group_hidden_size
         self.cat_feature_graph = CategoricalFeatureGraph(configs)
-        self.context_size = configs.group_hidden_size
+        self.feature_group_edge_weights = configs.feature_group_edge_weights
+        self.temporal_embedding_dim = configs.temporal_embedding_dim
+        self.context_size = configs.group_hidden_size + self.temporal_embedding_dim
         self.num_heads = configs.num_heads
+        self.time_features = configs.time_features
+        self.feature_group_edges = configs.feature_group_edges
+        self.responder_group_edges = configs.responder_group_edges
+        self.responder_group_edge_weights = configs.responder_group_edge_weights
+        self.num_projection_layers = configs.num_projection_layers
         self.real_value_embeddings = nn.ModuleDict(
             {
                 name: GatedResidualNetwork(
@@ -71,6 +79,7 @@ class FeatureGraph(nn.Module):
                     context_size=self.context_size,
                 )
                 for name in self.all_reals
+                if name not in self.time_features
             }
         )
         # Shared GRNs for categorical features
@@ -86,14 +95,14 @@ class FeatureGraph(nn.Module):
                 for name in self.cat_features
             }
         )
-        self.context_group = GroupVSN(
+        self.enc_cat_context_group = GroupVSN(
             group_id="context_group",
-            features=self.context_group["context_group"],
+            features=self.context_group_features["context_group"],
             input_sizes={
                 feature: int(self.cat_feature_graph.embeddings[feature].embedding_dim)
                 if feature in self.cat_features
                 else self.hidden_real_size
-                for feature in self.context_group["context_group"]
+                for feature in self.context_group_features["context_group"]
             },
             hidden_size=self.hidden_cat_size,
             dropout=self.dropout,
@@ -101,7 +110,24 @@ class FeatureGraph(nn.Module):
             single_variable_grns=self.feature_grns,
             is_context=True,
         )
-        self.feature_group_vsn = nn.ModuleDict(
+        self.dec_cat_context_group = GroupVSN(
+            group_id="context_group",
+            features=self.context_group_features["context_group"],
+            input_sizes={
+                feature: int(self.cat_feature_graph.embeddings[feature].embedding_dim)
+                if feature in self.cat_features
+                else self.hidden_real_size
+                for feature in self.context_group_features["context_group"]
+            },
+            hidden_size=self.hidden_cat_size,
+            dropout=self.dropout,
+            context_size=self.context_size,
+            single_variable_grns=self.feature_grns,
+            is_context=True,
+        )
+        self.temporal_embedding = TemporalEmbeddingLayer(self.temporal_embedding_dim)
+        self.temporal_pos_embedding = TemporalPosEmbeddings(self.temporal_embedding_dim)
+        self.enc_feature_group_vsn = nn.ModuleDict(
             {
                 group_name: GroupVSN(
                     group_id=group_name,
@@ -121,7 +147,30 @@ class FeatureGraph(nn.Module):
                     context_size=self.context_size,
                     single_variable_grns=self.feature_grns,
                 )
-                for group_name, group in configs.feature_groups.items()
+                for group_name, group in self.feature_groups.items()
+            }
+        )
+        self.dec_feature_group_vsn = nn.ModuleDict(
+            {
+                group_name: GroupVSN(
+                    group_id=group_name,
+                    features=group,
+                    input_sizes={
+                        feature: int(
+                            self.cat_feature_graph.embeddings[
+                                feature
+                            ].embedding_dim  # safety
+                        )
+                        if feature in self.cat_features
+                        else self.hidden_real_size
+                        for feature in group
+                    },
+                    hidden_size=self.hidden_real_size,
+                    dropout=self.dropout,
+                    context_size=self.context_size,
+                    single_variable_grns=self.feature_grns,
+                )
+                for group_name, group in self.feature_groups.items()
             }
         )
         self.responder_group_vsn = nn.ModuleDict(
@@ -144,33 +193,56 @@ class FeatureGraph(nn.Module):
                     context_size=self.context_size,
                     single_variable_grns=self.feature_grns,
                 )
-                for group_name, group in configs.responder_groups.items()
+                for group_name, group in self.responder_groups.items()
             }
         )
-        self.feature_stars = nn.ModuleDict(
+        self.enc_feature_stars = nn.ModuleDict(
             {
                 name: STAR(self.group_hidden_size, self.hidden_real_size)
-                for name in self.configs.feature_groups
+                for name in self.feature_groups
+            }
+        )
+        self.dec_feature_stars = nn.ModuleDict(
+            {
+                name: STAR(self.group_hidden_size, self.hidden_real_size)
+                for name in self.feature_groups
             }
         )
         self.responder_stars = nn.ModuleDict(
             {
                 name: STAR(self.group_hidden_size, self.hidden_real_size)
-                for name in configs.responder_groups
+                for name in self.responder_groups
             }
         )
-        self.feature_time_interaction = TimeSeriesInteractionNetwork(
-            num_channels=len(self.feature_stars) * self.group_hidden_size,
+        self.enc_feature_time_interaction = TimeSeriesInteractionNetwork(
+            num_channels=len(self.enc_feature_stars) * self.group_hidden_size,
             hidden_dim=self.hidden_real_size,
-            num_blocks=len(self.feature_stars),
-            edges=configs.feature_group_edges,
+            num_blocks=len(self.enc_feature_stars),
+            edges=self.feature_group_edges,
             initial_edge_weights={
                 tuple(edge): float(weight)
                 for edge, weight in zip(
-                    configs.feature_group_edges, configs.feature_group_edge_weights
+                    self.feature_group_edges, self.feature_group_edge_weights
                 )
             },
-            output_dim=int(self.hidden_real_size / 2) * len(self.feature_stars),
+            output_dim=int(self.hidden_real_size / 2) * len(self.enc_feature_stars),
+            dropout_rate=self.dropout,
+            activation="gelu",
+            leaky_relu_slope=0.01,
+            num_heads=self.num_heads,
+        )
+        self.dec_feature_time_interaction = TimeSeriesInteractionNetwork(
+            num_channels=len(self.dec_feature_stars) * self.group_hidden_size,
+            hidden_dim=self.hidden_real_size,
+            num_blocks=len(self.feature_groups),
+            edges=self.feature_group_edges,
+            initial_edge_weights={
+                tuple(edge): float(weight)
+                for edge, weight in zip(
+                    self.feature_group_edges, self.feature_group_edge_weights
+                )
+            },
+            output_dim=int(self.hidden_real_size / 2) * len(self.dec_feature_stars),
             dropout_rate=self.dropout,
             activation="gelu",
             leaky_relu_slope=0.01,
@@ -179,12 +251,12 @@ class FeatureGraph(nn.Module):
         self.responder_time_interaction = TimeSeriesInteractionNetwork(
             num_channels=len(self.responder_stars) * self.group_hidden_size,
             hidden_dim=self.hidden_real_size,
-            num_blocks=len(configs.responder_groups),
-            edges=configs.responder_group_edges,
+            num_blocks=len(self.responder_groups),
+            edges=self.responder_group_edges,
             initial_edge_weights={
                 tuple(edge): float(weight)
                 for edge, weight in zip(
-                    configs.responder_group_edges, configs.responder_group_edge_weights
+                    self.responder_group_edges, self.responder_group_edge_weights
                 )
             },
             output_dim=int(self.hidden_real_size / 2) * len(self.responder_stars),
@@ -193,49 +265,193 @@ class FeatureGraph(nn.Module):
             leaky_relu_slope=0.01,
             num_heads=self.num_heads,
         )
-
-        self.lone_groups = configs.lone_groups
-
-    def forward(self, x_real: torch.Tensor, x_cat: torch.Tensor) -> torch.Tensor:
-        cat_inputs = self.cat_feature_graph(x_cat)
-        real_inputs = {
-            name: self.real_value_embeddings[name](x_real[..., idx].unsqueeze(-1))
-            for idx, name in enumerate(self.all_reals)
-        }
-        inputs = {**real_inputs, **cat_inputs}
-        context, _ = self.context_group(
-            {name: inputs[name] for name in self.context_group.features}
+        self.enc_projection_layers = nn.ModuleList()
+        self.enc_projection_layers.append(
+            GatedResidualNetwork(
+                input_size=(len(self.enc_feature_stars) + len(self.responder_stars))
+                * int((1 / 2) * self.hidden_real_size),
+                hidden_size=int(self.hidden_real_size),
+                output_size=int(self.hidden_real_size / 2)
+                * len(self.dec_feature_stars),
+                dropout=self.dropout,
+                context_size=self.context_size,
+                residual=False,
+            )
         )
-        # First pass through all the feature GRNs and store the outputs
-        feature_grn_outputs = {
-            name: self.feature_grns[name](inputs[name], context) for name in inputs
+        for _ in range(self.num_projection_layers - 1):
+            self.enc_projection_layers.append(
+                GatedResidualNetwork(
+                    input_size=int(self.hidden_real_size / 2)
+                    * len(self.dec_feature_stars),
+                    hidden_size=int(self.hidden_real_size),
+                    output_size=int(self.hidden_real_size / 2)
+                    * len(self.dec_feature_stars),
+                    dropout=self.dropout,
+                    context_size=self.context_size,
+                    residual=True,
+                )
+            )
+        self.enc_dec_cross = OptimizedCrossAttention(
+            int(self.hidden_real_size / 2) * len(self.dec_feature_stars),
+            num_heads=self.num_heads,
+            attention_dropout=self.dropout,
+            output_dropout=self.dropout,
+        )
+        self.enc_dec_cross_post = nn.Linear(
+            int(self.hidden_real_size / 2) * len(self.dec_feature_stars),
+            int(self.hidden_real_size),
+        )
+        self.output_projection = nn.ModuleList()
+        self.output_projection.append(
+            GatedResidualNetwork(
+                input_size=int(self.hidden_real_size / 2) * len(self.dec_feature_stars),
+                hidden_size=int(self.hidden_real_size),
+                output_size=int(self.hidden_real_size),
+                dropout=self.dropout,
+                context_size=int(self.hidden_real_size),
+                residual=False,
+            )
+        )
+        for _ in range(self.num_projection_layers - 1):
+            self.output_projection.append(
+                GatedResidualNetwork(
+                    input_size=int(self.hidden_real_size),
+                    hidden_size=int(self.hidden_real_size),
+                    output_size=int(self.hidden_real_size),
+                    dropout=self.dropout,
+                    context_size=int(self.hidden_real_size),
+                    residual=True,
+                )
+            )
+        self.output_layer = nn.Linear(int(self.hidden_real_size), 1)
+
+    def forward(
+        self,
+        x_real_enc: torch.Tensor,
+        x_cat_enc: torch.Tensor,
+        x_real_dec: torch.Tensor,
+        x_dec_cat: torch.Tensor,
+    ) -> torch.Tensor:
+        enc_inputs = {
+            name: cat_emb for name, cat_emb in self.cat_feature_graph(x_cat_enc).items()
         }
-        feature_groups = {}
-        for group_name, group in self.feature_group_vsn.items():
-            feature_groups[group_name], _ = group(
-                inputs,
-                feature_grn_outputs,
-                context,
+        enc_inputs.update(
+            {
+                name: self.real_value_embeddings[name](
+                    x_real_enc[..., idx].unsqueeze(-1)
+                )
+                for idx, name in enumerate(self.all_reals)
+                if name not in self.time_features
+            }
+        )
+        enc_temporal_embedding = {
+            name: x_real_enc[..., idx].unsqueeze(-1)
+            for idx, name in enumerate(self.all_reals)
+            if name in self.time_features
+        }
+        dec_temporal_embedding = {
+            name: x_real_dec[..., idx].unsqueeze(-1)
+            for idx, name in enumerate(self.all_reals)
+            if name in self.time_features
+        }
+        enc_temporal_embedding = self.temporal_embedding(
+            *self.temporal_pos_embedding(
+                enc_temporal_embedding["date_id"], enc_temporal_embedding["time_idx"]
+            )
+        )
+        dec_temporal_embedding = self.temporal_embedding(
+            *self.temporal_pos_embedding(
+                dec_temporal_embedding["date_id"], dec_temporal_embedding["time_idx"]
+            )
+        )
+        dec_inputs = {
+            name: cat_emb for name, cat_emb in self.cat_feature_graph(x_dec_cat).items()
+        }
+        dec_inputs.update(
+            {
+                name: self.real_value_embeddings[name](
+                    x_real_dec[..., idx].unsqueeze(-1)
+                )
+                for idx, name in enumerate(self.features)
+                if name not in self.time_features
+            }
+        )
+        enc_context, _ = self.enc_cat_context_group(
+            {name: enc_inputs[name] for name in self.enc_cat_context_group.features}
+        )
+        dec_context, _ = self.dec_cat_context_group(
+            {name: dec_inputs[name] for name in self.dec_cat_context_group.features}
+        )
+        # print(enc_context.shape)
+        enc_context = torch.cat([enc_context, enc_temporal_embedding], dim=-1)
+        dec_context = torch.cat([dec_context, dec_temporal_embedding], dim=-1)
+        # First pass through all the feature GRNs and store the outputs
+        enc_feature_grn_outputs = {
+            name: self.feature_grns[name](enc_inputs[name], enc_context)
+            for name in enc_inputs
+            if name not in self.time_features
+        }
+        # print(enc_inputs['time_idx'].shape)
+        dec_feature_grn_outputs = {
+            name: self.feature_grns[name](dec_inputs[name], dec_context)
+            for name in dec_inputs
+            if name not in self.time_features
+        }
+        # Pass through the VSNs
+        enc_feature_groups = {}
+        dec_feature_groups = {}
+        # feature_sparse_weights = {}
+        for group_name, group in self.enc_feature_group_vsn.items():
+            enc_feature_groups[group_name], _ = group(
+                enc_inputs,
+                enc_feature_grn_outputs,
+                enc_context,
+            )
+        for group_name, group in self.dec_feature_group_vsn.items():
+            dec_feature_groups[group_name], _ = group(
+                dec_inputs,
+                dec_feature_grn_outputs,
+                dec_context,
             )
         responder_groups = {}
         for group_name, group in self.responder_group_vsn.items():
             responder_groups[group_name], _ = group(
-                inputs,
-                feature_grn_outputs,
-                context,
+                enc_inputs,
+                enc_feature_grn_outputs,
+                enc_context,
             )
-        feature_stars = {
-            name: self.feature_stars[name](feature_groups[name], context)
-            for name in feature_groups
+        # STARS
+        enc_feature_groups = {
+            name: self.enc_feature_stars[name](enc_feature_groups[name], enc_context)
+            for name in enc_feature_groups
         }
-        responder_stars = {
-            name: self.responder_stars[name](responder_groups[name], context)
+        dec_feature_groups = {
+            name: self.dec_feature_stars[name](dec_feature_groups[name], dec_context)
+            for name in dec_feature_groups
+        }
+        responder_groups = {
+            name: self.responder_stars[name](responder_groups[name], enc_context)
             for name in responder_groups
         }
-        # StARS
-        feature_stars = torch.cat(list(feature_stars.values()), dim=-1)
-        responder_stars = torch.cat(list(responder_stars.values()), dim=-1)
+        enc_feature_groups = torch.cat(list(enc_feature_groups.values()), dim=-1)
+        dec_feature_groups = torch.cat(list(dec_feature_groups.values()), dim=-1)
+        responder_groups = torch.cat(list(responder_groups.values()), dim=-1)
         # TSI
-        feature_stars = self.feature_time_interaction(feature_stars)
-        responder_stars = self.responder_time_interaction(responder_stars)
-        return feature_stars, responder_stars
+        enc_feature_groups, _ = self.enc_feature_time_interaction(enc_feature_groups)
+        dec_feature_groups, _ = self.dec_feature_time_interaction(dec_feature_groups)
+        responder_groups, _ = self.responder_time_interaction(responder_groups)
+        # Projection to match the decoder output dimension
+        enc_feature_groups = torch.cat([enc_feature_groups, responder_groups], dim=-1)
+        for layer in self.enc_projection_layers:
+            enc_feature_groups = layer(enc_feature_groups, enc_context)
+
+        # Temporal Cross Attention
+        enc_feature_groups = self.enc_dec_cross(enc_feature_groups, dec_feature_groups)
+        enc_feature_groups = self.enc_dec_cross_post(enc_feature_groups)
+        # Output projection
+        for layer in self.output_projection:
+            dec_feature_groups = layer(dec_feature_groups, enc_feature_groups)
+
+        # Final output layer
+        output = self.output_layer(dec_feature_groups[:, -1, :])
+        return output

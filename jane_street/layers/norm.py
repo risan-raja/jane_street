@@ -30,7 +30,7 @@ class ResampleNorm(nn.Module):
 
         if self.trainable_add:
             x = x * self.gate(self.mask) * 2.0
-
+        # assert self.norm.device == x.device
         output = self.norm(x)
         return output
 
