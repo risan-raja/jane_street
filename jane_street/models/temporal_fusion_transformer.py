@@ -63,7 +63,11 @@ class TemporalFT(ppl.LightningModule):
         return self.model(X)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.RAdam(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(
+            self.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.config.weight_decay,
+        )
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", patience=5, factor=0.8
         )

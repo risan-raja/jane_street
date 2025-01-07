@@ -346,7 +346,7 @@ class FeatureGraph(nn.Module):
         ) < lengths.unsqueeze(1)  # (B, max_len)
 
         # Expand to (B, 1, 1, max_len) for compatibility with attention scores
-        mask = mask.unsqueeze(1).unsqueeze(2)  # (B, 1, 1, max_len)
+        mask = mask.unsqueeze(1)  # (B, 1, 1, max_len)
         mask = mask.unsqueeze(2).expand(
             B, self.num_heads, max_len, max_len
         )  # (B, num_heads, max_len, max_len)
@@ -495,9 +495,12 @@ class FeatureGraph(nn.Module):
             dec_feature_groups = layer(dec_feature_groups, enc_feature_groups)
 
         # Final output layer
-        output = self.output_layer(dec_feature_groups[:, -1:, :])
-        output = torch.stack(
-            [output[i, x["decoder_lengths"][i] - 1, :] for i in range(output.size(0))],
+        dec_feature_groups = self.output_layer(dec_feature_groups)
+        dec_feature_groups = torch.stack(
+            [
+                dec_feature_groups[i, x["decoder_lengths"][i] - 1, :]
+                for i in range(dec_feature_groups.size(0))
+            ],
             dim=0,
         ).unsqueeze(-1)
-        return output
+        return dec_feature_groups

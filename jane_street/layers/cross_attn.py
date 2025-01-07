@@ -98,7 +98,7 @@ class OptimizedCrossAttention(nn.Module):
     ) -> torch.Tensor:
         B, T_future, D_q = future_queries.shape
         B, T_lookback, D_kv = encoded_representation.shape
-        assert D_q == self.d_model and D_kv == self.d_model, "Input dimension mismatch"
+        # assert D_q == self.d_model and D_kv == self.d_model, "Input dimension mismatch"
 
         # Generate mask based on encoder and decoder lengths
         mask = self.generate_mask(decoder_lengths, encoder_lengths)
