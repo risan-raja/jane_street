@@ -5,7 +5,7 @@ import polars as pl
 import torch.distributed as dist
 from ..datasets.js_tsdataset import JSTSDataset
 import numpy as np
-import random
+from numpy.random import default_rng
 
 pl.enable_string_cache()
 
@@ -123,7 +123,8 @@ class JSTrainDataSampler(DistributedSampler):
             ci = ci.join(
                 self.grouped_index, on=["end_date", "decoder_length"], how="inner"
             )
-        rb = ci.map_rows(lambda df: random.choice(df[2])).to_numpy().ravel()
+        rng = default_rng(self.seed + self.epoch)
+        rb = ci.map_rows(lambda df: rng.choice(df[2])).to_numpy().ravel()
         ci = ci.with_columns(pl.lit(rb).alias("sel_symbol_id"))
         res_i = ci.map_rows(lambda li: li[3][li[2].index(li[4])]).to_numpy().ravel()
         res_ = (
@@ -135,9 +136,19 @@ class JSTrainDataSampler(DistributedSampler):
 
     def __iter__(self):
         indices = self.index
-        assert len(indices) == self.total_size
+        # assert len(indices) == self.total_size
+        if len(indices) < self.total_size:
+            print(
+                f"Warning: len(indices) {len(indices)} < total_size {self.total_size}",
+                " Sampling with replacement",
+            )
+            rng = default_rng(self.seed + self.epoch)
+            indices = rng.choice(indices, self.total_size, replace=True)
 
-        indices = indices[self.rank : self.total_size : self.num_replicas]
+        indices = indices[self.rank : self.total_size : self.num_replicas][
+            : self.num_samples
+        ]
+
         assert len(indices) == self.num_samples
         return iter(indices)
 

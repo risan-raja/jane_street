@@ -46,16 +46,62 @@ class OptimizedCrossAttention(nn.Module):
         nn.init.zeros_(self.wv.bias)
         nn.init.zeros_(self.wo.bias)
 
+    def generate_mask(self, decoder_lengths, encoder_lengths):
+        """
+        Generates a mask for the cross-attention mechanism.
+
+        Args:
+            decoder_lengths (torch.Tensor): A tensor of shape (B,) containing the lengths of the decoder sequences.
+            encoder_lengths (torch.Tensor): A tensor of shape (B,) containing the lengths of the encoder sequences.
+
+        Returns:
+            torch.Tensor: A mask tensor of shape (B, num_heads, T_future, T_lookback) where 1 indicates a valid position and 0 indicates a padded position.
+        """
+        B = decoder_lengths.size(0)
+        max_decoder_len = decoder_lengths.max()
+        max_encoder_len = encoder_lengths.max()
+
+        # Create masks for decoder and encoder sequences
+        decoder_mask = torch.arange(max_decoder_len).expand(B, max_decoder_len).to(
+            decoder_lengths.device
+        ) < decoder_lengths.unsqueeze(1)
+        encoder_mask = torch.arange(max_encoder_len).expand(B, max_encoder_len).to(
+            encoder_lengths.device
+        ) < encoder_lengths.unsqueeze(1)
+
+        # Expand masks to match attention scores shape
+        decoder_mask = decoder_mask.unsqueeze(1).unsqueeze(
+            -1
+        )  # (B, 1, max_decoder_len, 1)
+        encoder_mask = encoder_mask.unsqueeze(1).unsqueeze(
+            -2
+        )  # (B, 1, 1, max_encoder_len)
+
+        # Combine masks: valid only if both decoder and encoder positions are valid
+        final_mask = (
+            decoder_mask & encoder_mask
+        )  # (B, 1, max_decoder_len, max_encoder_len)
+
+        # Expand to number of heads
+        final_mask = final_mask.expand(
+            -1, self.num_heads, -1, -1
+        )  # (B, num_heads, max_decoder_len, max_encoder_len)
+
+        return final_mask
+
     def forward(
         self,
         encoded_representation: torch.Tensor,
         future_queries: torch.Tensor,
-        mask: torch.Tensor = None,
+        decoder_lengths: torch.Tensor,
+        encoder_lengths: torch.Tensor,
     ) -> torch.Tensor:
         B, T_future, D_q = future_queries.shape
         B, T_lookback, D_kv = encoded_representation.shape
         assert D_q == self.d_model and D_kv == self.d_model, "Input dimension mismatch"
 
+        # Generate mask based on encoder and decoder lengths
+        mask = self.generate_mask(decoder_lengths, encoder_lengths)
         # Project queries, keys, and values
         Q = (
             self.wq(future_queries)
@@ -79,8 +125,8 @@ class OptimizedCrossAttention(nn.Module):
         )  # (B, num_heads, T_future, T_lookback)
 
         # Apply mask if provided
-        if mask is not None:
-            attention_scores = attention_scores.masked_fill(mask == 0, float("-inf"))
+        # if mask is not None:
+        attention_scores = attention_scores.masked_fill(mask == 0, float("-inf"))
 
         attention_probs = F.softmax(attention_scores, dim=-1)
         attention_probs = self.attention_dropout(

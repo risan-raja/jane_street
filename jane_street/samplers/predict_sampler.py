@@ -1,4 +1,3 @@
-import torch
 from torch.utils.data import DistributedSampler
 from typing import Optional
 import math
@@ -42,7 +41,7 @@ class JSPredictDataSampler(DistributedSampler):
         shuffle: bool = False,
         seed: int = 0,
         drop_last: bool = False,
-        max_samples: int = 200000,
+        max_samples: int | None = 200000,
     ) -> None:
         if num_replicas is None:
             if not dist.is_available():
@@ -57,40 +56,55 @@ class JSPredictDataSampler(DistributedSampler):
                 f"Invalid rank {rank}, rank should be in the interval [0, {num_replicas - 1}]"
             )
         self.dataset = dataset
-        self.index = dataset.sampler_index
+        self.mindex = dataset.sampler_index
         self.num_replicas = num_replicas
         self.rank = rank
         self.epoch = 0
         self.drop_last = drop_last
         self.shuffle = shuffle
         self.seed = seed
-        if max_samples is not None and shuffle:
-            self.index = self.index.sample(n=max_samples, seed=seed)
-        elif max_samples is not None and not shuffle:
-            self.index = self.index.head(n=max_samples)
-        self.indexes = self.index["idx"].to_list()
-        if self.drop_last and len(self.index) % self.num_replicas != 0:  # type: ignore[arg-type]
+        if max_samples is None:
+            raise ValueError("max_samples must be provided")
+        self.max_samples = max_samples
+        # if max_samples is not None and shuffle:
+        #     self.index = self.index.sample(n=max_samples, seed=seed)
+        # elif max_samples is not None and not shuffle:
+        #     self.index = self.index.head(n=max_samples)
+        # self.indexes = self.index["idx"].to_list()
+        if self.drop_last and self.max_samples % self.num_replicas != 0:  # type: ignore[arg-type]
             # Split to nearest available length that is evenly divisible.
             # This is to ensure each rank receives the same amount of data when
             # using this Sampler.
             self.num_samples = math.ceil(
-                (len(self.index) - self.num_replicas) / self.num_replicas  # type: ignore[arg-type]
+                (self.max_samples - self.num_replicas) / self.num_replicas  # type: ignore[arg-type]
             )
         else:
-            self.num_samples = math.ceil(len(self.index) / self.num_replicas)  # type: ignore[arg-type]
+            self.num_samples = math.ceil(self.max_samples / self.num_replicas)  # type: ignore[arg-type]
         self.total_size = self.num_samples * self.num_replicas
 
-    def __iter__(self):
+    @property
+    def index(self):
         if self.shuffle:
-            # deterministically shuffle based on epoch and seed
-            g = torch.Generator()
-            g.manual_seed(self.seed + self.epoch)
-            indices = torch.randperm(
-                len(self.index["idx"].to_list()), generator=g
-            ).tolist()  # type: ignore[arg-type]
-            indices = self.index["idx"].to_numpy()[indices].ravel().tolist()
+            index = self.mindex.sample(n=self.max_samples, seed=self.seed + self.epoch)
         else:
-            indices = self.index["idx"].to_list()  # type: ignore[arg-type]
+            index = self.mindex.slice(
+                self.epoch * self.num_replicas * 4000,
+                self.max_samples + self.epoch * self.num_replicas * 4000 + 5000,
+            ).slice(0, self.max_samples)
+        return index
+
+    def __iter__(self):
+        # if self.shuffle:
+        #     # deterministically shuffle based on epoch and seed
+        #     g = torch.Generator()
+        #     g.manual_seed(self.seed + self.epoch)
+        #     indices = torch.randperm(
+        #         len(self.index["idx"].to_list()), generator=g
+        #     ).tolist()  # type: ignore[arg-type]
+        #     indices = self.index["idx"].to_numpy()[indices].ravel().tolist()
+        # else:
+        # Already shuffled. Refer to the property index
+        indices = self.index["idx"].to_list()  # type: ignore[arg-type]
         # indices = self.index["idx"].to_list()
         # if not self.drop_last:
         # add extra samples to make it evenly divisible

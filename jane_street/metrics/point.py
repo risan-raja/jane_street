@@ -162,6 +162,53 @@ class MSE(MultiHorizonMetric):
         return loss
 
 
+class nMSE(MultiHorizonMetric):
+    """
+    Normalized Mean Square error.
+
+    Defined as ``(y_pred - target).abs()^2/ target.abs()^2``
+    """
+
+    def __init__(self, reduction="mean", **kwargs):
+        self.reduction = reduction
+        super().__init__(reduction="mean", **kwargs)
+        self.reduction = reduction
+
+    def to_prediction(self, y_pred):
+        b, t, c = y_pred.shape
+        if c == 3:
+            quantile_vectors = [
+                torch.ones((b, t, 1), device=y_pred.device) * q for q in [0.3, 0.5, 0.7]
+            ]
+            quantileV = torch.cat(quantile_vectors, dim=-1)
+            return torch.sum((y_pred * quantileV) / 1.5, dim=-1)
+        elif c == 1:
+            return y_pred.squeeze(-1)
+        else:
+            return y_pred.mean(-1)
+
+    def loss(self, y_pred, target_w):
+        # print(target_w.shape)
+        if target_w.ndim == 4:
+            # print("hit")
+            target = target_w.squeeze(-1)[..., 0]
+            # weights = target_w.squeeze(-1)[..., 1]
+        elif target_w.ndim == 3:
+            target = target_w[..., 0]
+            # weights = target_w[..., 1]
+        else:
+            raise ValueError(
+                f"Invalid target_w shape: {target_w.shape}\n y_pred shape: {y_pred.shape}"
+            )
+        # print(y_pred.shape)
+        # if y_pred.ndim > 1:
+        #     y_pred = y_pred.mean(-1)
+        loss = ((self.to_prediction(y_pred) - target) ** 2).sum() / (
+            (target) ** 2
+        ).sum()
+        return loss
+
+
 class RMSE(MSE):
     """
     Root Mean Square error.

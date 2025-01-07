@@ -9,7 +9,7 @@ from ..layers.tft import TFT
 
 # from ..metrics.quantile import WeightedQuantileLoss
 # from ..metrics.r2score import WeightedZeroMeanR2Score
-from ..metrics.point import SMAPE, MSSE, MAE, MSE
+from ..metrics.point import SMAPE, MSSE, MAE, MSE, nMSE
 from ..utils.outputs import detach, create_mask, integer_histogram, masked_op
 from ..utils.pad import padded_stack
 
@@ -34,7 +34,7 @@ class TemporalFT(ppl.LightningModule):
         # self.train_weighted_r2 = WeightedZeroMeanR2Score()
         # self.val_weighted_r2 = WeightedZeroMeanR2Score()
         # self.wt_loss = ZRMSS(master_conf.quantiles)
-        self.logging_metrics = [SMAPE(), MAE(), self.r_loss]
+        self.logging_metrics = [SMAPE(), MAE(), self.r_loss, nMSE()]
         # self.logging_metrics = [SMAPE()]
         self.training_step_outputs = []
         self.validation_step_outputs = []

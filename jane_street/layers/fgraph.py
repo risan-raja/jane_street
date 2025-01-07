@@ -247,6 +247,7 @@ class FeatureGraph(nn.Module):
             activation="gelu",
             leaky_relu_slope=0.01,
             num_heads=self.num_heads,
+            mask_flag=True,
         )
         self.responder_time_interaction = TimeSeriesInteractionNetwork(
             num_channels=len(self.responder_stars) * self.group_hidden_size,
@@ -325,6 +326,33 @@ class FeatureGraph(nn.Module):
             )
         self.output_layer = nn.Linear(int(self.hidden_real_size), 1)
 
+    def generate_padding_mask(self, lengths):
+        """
+        Generates a padding mask for the TSI attention mechanism for the decoder.
+
+        Args:
+            lengths (torch.Tensor): A tensor of shape (B,) containing the lengths of the sequences.
+            max_len (int, optional): The maximum length to use for the mask. If None, uses the maximum length in `lengths`.
+
+        Returns:
+            torch.Tensor: A mask tensor of shape (B, 1, 1, max_len) where 1 indicates a valid position and 0 indicates a padded position.
+        """
+        B = lengths.size(0)
+        max_len = lengths.max()
+
+        # Create a mask for padded positions
+        mask = torch.arange(max_len, device=lengths.device).expand(
+            B, max_len
+        ) < lengths.unsqueeze(1)  # (B, max_len)
+
+        # Expand to (B, 1, 1, max_len) for compatibility with attention scores
+        mask = mask.unsqueeze(1).unsqueeze(2)  # (B, 1, 1, max_len)
+        mask = mask.unsqueeze(2).expand(
+            B, self.num_heads, max_len, max_len
+        )  # (B, num_heads, max_len, max_len)
+
+        return mask
+
     def forward(
         self,
         x: dict[str, torch.Tensor],
@@ -332,6 +360,7 @@ class FeatureGraph(nn.Module):
         x["encoder_reals"] = torch.cat(
             [x["encoder_reals"], x["encoder_targets"]], dim=-1
         )
+        dec_mask = self.generate_padding_mask(x["decoder_lengths"])
         enc_inputs = {
             name: cat_emb
             for name, cat_emb in self.cat_feature_graph(
@@ -444,7 +473,9 @@ class FeatureGraph(nn.Module):
         responder_groups = torch.cat(list(responder_groups.values()), dim=-1)
         # TSI
         enc_feature_groups, _ = self.enc_feature_time_interaction(enc_feature_groups)
-        dec_feature_groups, _ = self.dec_feature_time_interaction(dec_feature_groups)
+        dec_feature_groups, _ = self.dec_feature_time_interaction(
+            dec_feature_groups, dec_mask
+        )
         responder_groups, _ = self.responder_time_interaction(responder_groups)
         # Projection to match the decoder output dimension
         enc_feature_groups = torch.cat([enc_feature_groups, responder_groups], dim=-1)
@@ -452,7 +483,12 @@ class FeatureGraph(nn.Module):
             enc_feature_groups = layer(enc_feature_groups, enc_context)
 
         # Temporal Cross Attention
-        enc_feature_groups = self.enc_dec_cross(enc_feature_groups, dec_feature_groups)
+        enc_feature_groups = self.enc_dec_cross(
+            enc_feature_groups,
+            dec_feature_groups,
+            x["decoder_lengths"],
+            x["encoder_lengths"],
+        )
         enc_feature_groups = self.enc_dec_cross_post(enc_feature_groups)
         # Output projection
         for layer in self.output_projection:

@@ -142,3 +142,15 @@ AutostainerParallelProcess_V4_2.py
 pyproject_old.toml
 stainer.ipynb
 stainer.ipynb
+data/xgb_models/xgb_model_community=0_val=0.005679.json
+data/xgb_models/xgb_model_community=1_val=0.00548.json
+data/xgb_models/xgb_model_community=2_val=0.004925.json
+data/xgb_models/xgb_model_community=3_val=0.004955.json
+data/xgb_models/xgb_model_community=3_val=0.005394.json
+data/xgb_models/xgb_model_community=3_val=0.005396.json
+data/xgb_models/xgb_model_community=4_val=0.004703.json
+data/xgb_models/xgb_model_community=4_val=0.005404.json
+data/xgb_models/xgb_model_community=4_val=0.005408.json
+data/xgb_models/xgb_model_val=0.006625.json
+data/xgb_models/xgb_model_val=0.006997.json
+data/xgb_models/xgb_model_val=0.007584.json
