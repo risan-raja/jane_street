@@ -327,30 +327,33 @@ class FeatureGraph(nn.Module):
 
     def forward(
         self,
-        x_real_enc: torch.Tensor,
-        x_cat_enc: torch.Tensor,
-        x_real_dec: torch.Tensor,
-        x_dec_cat: torch.Tensor,
+        x: dict[str, torch.Tensor],
     ) -> torch.Tensor:
+        x["encoder_reals"] = torch.cat(
+            [x["encoder_reals"], x["encoder_targets"]], dim=-1
+        )
         enc_inputs = {
-            name: cat_emb for name, cat_emb in self.cat_feature_graph(x_cat_enc).items()
+            name: cat_emb
+            for name, cat_emb in self.cat_feature_graph(
+                x["encoder_categoricals"]
+            ).items()
         }
         enc_inputs.update(
             {
                 name: self.real_value_embeddings[name](
-                    x_real_enc[..., idx].unsqueeze(-1)
+                    x["encoder_reals"][..., idx].unsqueeze(-1)
                 )
                 for idx, name in enumerate(self.all_reals)
                 if name not in self.time_features
             }
         )
         enc_temporal_embedding = {
-            name: x_real_enc[..., idx].unsqueeze(-1)
+            name: x["encoder_reals"][..., idx].unsqueeze(-1)
             for idx, name in enumerate(self.all_reals)
             if name in self.time_features
         }
         dec_temporal_embedding = {
-            name: x_real_dec[..., idx].unsqueeze(-1)
+            name: x["decoder_reals"][..., idx].unsqueeze(-1)
             for idx, name in enumerate(self.all_reals)
             if name in self.time_features
         }
@@ -365,12 +368,15 @@ class FeatureGraph(nn.Module):
             )
         )
         dec_inputs = {
-            name: cat_emb for name, cat_emb in self.cat_feature_graph(x_dec_cat).items()
+            name: cat_emb
+            for name, cat_emb in self.cat_feature_graph(
+                x["decoder_categoricals"]
+            ).items()
         }
         dec_inputs.update(
             {
                 name: self.real_value_embeddings[name](
-                    x_real_dec[..., idx].unsqueeze(-1)
+                    x["decoder_reals"][..., idx].unsqueeze(-1)
                 )
                 for idx, name in enumerate(self.features)
                 if name not in self.time_features
@@ -453,5 +459,9 @@ class FeatureGraph(nn.Module):
             dec_feature_groups = layer(dec_feature_groups, enc_feature_groups)
 
         # Final output layer
-        output = self.output_layer(dec_feature_groups[:, -1, :])
+        output = self.output_layer(dec_feature_groups[:, -1:, :])
+        output = torch.stack(
+            [output[i, x["decoder_lengths"][i] - 1, :] for i in range(output.size(0))],
+            dim=0,
+        ).unsqueeze(-1)
         return output

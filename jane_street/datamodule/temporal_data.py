@@ -3,7 +3,8 @@ from typing import Optional
 from torch.utils.data import DataLoader
 from omegaconf import DictConfig
 from ..datasets import JSTSDataset, JSDatasetMeta, custom_collate_fn
-from ..samplers import JSPredictDataSampler, JSTrainDataSampler
+from ..samplers import JSPredictDataSampler
+from ..samplers.train_sampler_uni import JSTrainDataSampler
 
 
 class JSDataModule(pl.LightningDataModule):
@@ -16,6 +17,7 @@ class JSDataModule(pl.LightningDataModule):
         self.train_batch_size = config.train.batch_size
         self.val_batch_size = config.val.batch_size
         self.test_batch_size = config.test.batch_size
+        self.n_cardinal = config.train.n_cardinal
 
     def setup(self, stage: Optional[str] = None):
         if stage == "fit":
@@ -32,7 +34,11 @@ class JSDataModule(pl.LightningDataModule):
     def train_dataloader(self):
         self.train_dataset_metadata = JSDatasetMeta(index_path=self.train_index_path)
         self.train_dataset = JSTSDataset(self.train_dataset_metadata)
-        self.train_sampler = JSTrainDataSampler(self.train_dataset)
+        self.train_sampler = JSTrainDataSampler(
+            self.train_dataset,
+            batch_size=self.train_batch_size,
+            n_cardinal=self.n_cardinal,
+        )
         return DataLoader(
             dataset=self.train_dataset,
             batch_size=self.train_batch_size,

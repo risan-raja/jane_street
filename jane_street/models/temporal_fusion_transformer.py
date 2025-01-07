@@ -211,6 +211,7 @@ class TemporalFT(ppl.LightningModule):
             on_epoch=True,
             batch_size=len(x["decoder_lengths"]),
             sync_dist=True,
+            prog_bar=True,
         )
         self.log(
             f"hp/{self.current_stage}_loss",

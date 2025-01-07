@@ -1,9 +1,13 @@
 import torch
 from torch.utils.data import DistributedSampler
 from typing import Optional
-import math
+import polars as pl
 import torch.distributed as dist
-from ..datasets.js_dataset import JSTrainDataset
+from ..datasets.js_tsdataset import JSTSDataset
+import numpy as np
+import random
+
+pl.enable_string_cache()
 
 
 class JSTrainDataSampler(DistributedSampler):
@@ -36,12 +40,14 @@ class JSTrainDataSampler(DistributedSampler):
 
     def __init__(
         self,
-        dataset: JSTrainDataset,
+        dataset: JSTSDataset,
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
         shuffle: bool = True,
         seed: int = 42,
+        batch_size: int = 64,
         drop_last: bool = True,
+        n_cardinal: int = 2,
     ) -> None:
         if num_replicas is None:
             if not dist.is_available():
@@ -57,50 +63,78 @@ class JSTrainDataSampler(DistributedSampler):
             )
         self.dataset = dataset
         self.mindex = dataset.sampler_index
+        self.grouped_index = self.mindex.group_by(["end_date", "decoder_length"]).agg(
+            pl.col("symbol_id"), pl.col("idx")
+        )
+        self.date_min = self.mindex["end_date"].cast(pl.Int16).min()
+        self.date_max = self.mindex["end_date"].cast(pl.Int16).max()
+        self.batch_size = batch_size
         self.num_replicas = num_replicas
         self.rank = rank
         self.epoch = 0
         self.drop_last = drop_last
         self.shuffle = shuffle
         self.seed = seed
-        # self.index = self.index.sample(n=4_900_000, seed=seed)
-        # self.indexes = self.index["idx"].to_list()
-
-        if self.drop_last and len(self.index) % self.num_replicas != 0:  # type: ignore[arg-type]
-            # Split to nearest available length that is evenly divisible.
-            # This is to ensure each rank receives the same amount of data when
-            # using this Sampler.
-            self.num_samples = math.ceil(
-                (len(self.index) - self.num_replicas) / self.num_replicas  # type: ignore[arg-type]
-            )
-        else:
-            self.num_samples = math.ceil(len(self.index) / self.num_replicas)  # type: ignore[arg-type]
-        self.total_size = self.num_samples * self.num_replicas
+        self.n_cardinal = n_cardinal
+        self.total_size = self.batch_size * 968 * self.n_cardinal * self.num_replicas
+        self.num_samples = self.total_size // self.num_replicas
+        print(
+            f"num_samples {self.num_samples} total_size {self.total_size} rank {self.rank} num_replicas {self.num_replicas}"
+        )
 
     @property
     def index(self):
-        return self.mindex.sample(n=4_900_000, seed=self.seed + self.epoch)
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
+        tsteps = [np.arange(1, 969) for _ in range(self.n_cardinal)]
+        tsteps = np.concatenate(tsteps)
+        perm = torch.randperm(len(tsteps), generator=g).numpy()
+        tsteps = tsteps[perm]
+        batch_dates = []
+        for tstep_idx in tsteps:
+            g.manual_seed(self.seed + self.epoch + int(tstep_idx))
+            if tstep_idx < 848:
+                dates = torch.randint(
+                    self.date_min,
+                    self.date_max + 1,
+                    (self.batch_size * self.num_replicas,),
+                    generator=g,
+                ).numpy()
+            else:
+                dates = torch.randint(
+                    677,
+                    self.date_max + 1,
+                    (self.batch_size * self.num_replicas,),
+                    generator=g,
+                ).numpy()
+            batch_dates.extend(dates)
+        tsteps = np.repeat(tsteps, self.batch_size * self.num_replicas)
+        with pl.StringCache():
+            ci = pl.DataFrame(
+                {
+                    "end_date": [str(x) for x in batch_dates],
+                    "decoder_length": [str(x) for x in tsteps],
+                }
+            )
+            ci = ci.with_columns(
+                pl.col("end_date").cast(pl.Categorical),
+                pl.col("decoder_length").cast(pl.Categorical),
+            )
+            ci = ci.join(
+                self.grouped_index, on=["end_date", "decoder_length"], how="inner"
+            )
+        rb = ci.map_rows(lambda df: random.choice(df[2])).to_numpy().ravel()
+        ci = ci.with_columns(pl.lit(rb).alias("sel_symbol_id"))
+        res_i = ci.map_rows(lambda li: li[3][li[2].index(li[4])]).to_numpy().ravel()
+        res_ = (
+            ci.with_columns(pl.lit(res_i).alias("sel_idx"))
+            .select("sel_idx")["sel_idx"]
+            .to_list()
+        )
+        return res_
 
     def __iter__(self):
-        if self.shuffle:
-            # deterministically shuffle based on epoch and seed
-            g = torch.Generator()
-            g.manual_seed(self.seed + self.epoch)
-            indices = torch.randperm(
-                len(self.index["idx"].to_list()), generator=g
-            ).tolist()  # type: ignore[arg-type]
-            indices = self.index["idx"].to_numpy()[indices].ravel().tolist()
-        else:
-            indices = self.index["idx"].to_list()  # type: ignore[arg-type]
-        # indices = self.index["idx"].to_list()
-        # if not self.drop_last:
-        # add extra samples to make it evenly divisible
-        padding_size = self.total_size - len(indices)
-        if padding_size <= len(indices):
-            indices += indices[:padding_size]
-        else:
-            indices += (indices * math.ceil(padding_size / len(indices)))[:padding_size]
-
+        indices = self.index
         assert len(indices) == self.total_size
 
         indices = indices[self.rank : self.total_size : self.num_replicas]
