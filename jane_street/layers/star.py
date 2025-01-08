@@ -66,7 +66,7 @@ class STAR(nn.Module):
             ratio = ratio.permute(0, 2, 1)
             ratio = ratio.reshape(-1, channels)
             # print(ratio)
-            ratio = torch.nan_to_num(ratio, nan=1e-9)
+            # ratio = torch.nan_to_num(ratio, nan=1e-9)
             indices = torch.multinomial(torch.abs(ratio), 1)
             indices = indices.view(batch_size, -1, 1).permute(0, 2, 1)
             combined_mean = torch.gather(combined_mean, 1, indices)

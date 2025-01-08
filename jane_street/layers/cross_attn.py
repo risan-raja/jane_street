@@ -102,6 +102,7 @@ class OptimizedCrossAttention(nn.Module):
 
         # Generate mask based on encoder and decoder lengths
         mask = self.generate_mask(decoder_lengths, encoder_lengths)
+        # mask = None
         # Project queries, keys, and values
         Q = (
             self.wq(future_queries)
@@ -126,7 +127,7 @@ class OptimizedCrossAttention(nn.Module):
 
         # Apply mask if provided
         # if mask is not None:
-        attention_scores = attention_scores.masked_fill(mask == 0, float("-inf"))
+        attention_scores = attention_scores.masked_fill(mask == 0, -1e-9)
 
         attention_probs = F.softmax(attention_scores, dim=-1)
         attention_probs = self.attention_dropout(

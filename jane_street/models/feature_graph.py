@@ -6,16 +6,17 @@ from pytorch_lightning.callbacks import (
     GradientAccumulationScheduler,
     ModelCheckpoint,
     StochasticWeightAveraging,
+    LearningRateMonitor,
 )
 import torch
 from torchmetrics import (
     MeanSquaredError,
     R2Score,
     MeanAbsoluteError,
-    MeanAbsolutePercentageError,
-    RelativeSquaredError,
-    SymmetricMeanAbsolutePercentageError,
     NormalizedRootMeanSquaredError,
+    # MeanAbsolutePercentageError,
+    # RelativeSquaredError,
+    # SymmetricMeanAbsolutePercentageError,
 )
 
 
@@ -38,16 +39,13 @@ class FeatureGraphModel(ppl.LightningModule):
         self.loss = MeanSquaredError()
         self.r2 = R2Score()
         self.mae = MeanAbsoluteError()
-        self.mape = MeanAbsolutePercentageError()
-        self.rse = RelativeSquaredError()
-        self.smape = SymmetricMeanAbsolutePercentageError()
+        # self.mape = MeanAbsolutePercentageError()
+        # self.rse = RelativeSquaredError()
+        # self.smape = SymmetricMeanAbsolutePercentageError()
         self.metrics = {
             "mse": self.mse,
             "r2": self.r2,
             "mae": self.mae,
-            "mape": self.mape,
-            "rse": self.rse,
-            "smape": self.smape,
         }
         self.learning_rate = config.learning_rate
         self.weight_decay = config.weight_decay
@@ -76,7 +74,6 @@ class FeatureGraphModel(ppl.LightningModule):
     def training_step(self, batch, batch_idx):
         X, y = batch
         y_true = y.squeeze(-1)[..., 0]
-        wt = y.squeeze(-1)[..., 1]
         y_pred = self.model(X).squeeze(-1)
         loss = self.loss(y_pred, y_true)
         self.log(
@@ -88,20 +85,38 @@ class FeatureGraphModel(ppl.LightningModule):
             batch_size=X["decoder_lengths"].size(0),
             sync_dist=True,
         )
+        return loss
+
+    def on_train_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
+        _, y = batch
+        y_true = y.squeeze(-1)[..., 0]
+        wt = y.squeeze(-1)[..., 1]
+        y_pred = outputs.squeeze(-1).clone()
+        y_pred = y_pred.detach()
         metrics = {k: v(y_pred, y_true) for k, v in self.metrics.items()}
         self.log_dict(
             {f"{self.current_stage}_{k}": v for k, v in metrics.items()},
             on_step=True,
-            on_epoch=True,
+            on_epoch=False,
             sync_dist=True,
         )
+        score, score_numerator, score_denominator = self.r2zmse_batch(
+            y_pred, y_true, wt
+        )
+        self.log(
+            f"{self.current_stage}_score_batch",
+            score,
+            on_step=True,
+            on_epoch=False,
+            rank_zero_only=True,
+        )
+        # Store the numerator and denominator for the epoch level calculation
         self.training_step_outputs.append(
             [
-                self.r2numerator(y_pred.detach(), y_true, wt),
-                self.r2denominator(y_true, wt),
+                score_numerator,
+                score_denominator,
             ]
         )
-        return loss
 
     def configure_callbacks(self):
         early_stopping = EarlyStopping(
@@ -118,12 +133,14 @@ class FeatureGraphModel(ppl.LightningModule):
             filename="{epoch}-{val_loss:.2f}-feature_graph",
             save_top_k=10,
             mode="min",
+            every_n_train_steps=200,
             verbose=False,
             enable_version_counter=True,
         )
-        swa = StochasticWeightAveraging(swa_lrs=1e-2, swa_epoch_start=3)
+        swa = StochasticWeightAveraging(swa_lrs=1e-3, swa_epoch_start=3)
         accumulator = GradientAccumulationScheduler(scheduling={4: 2})
-        return [early_stopping, checkpoint, swa, accumulator]
+        lr_monitor = LearningRateMonitor(logging_interval="step")
+        return [early_stopping, checkpoint, swa, accumulator, lr_monitor]
 
     def r2numerator(self, y_pred, y_true, wt):
         return (((y_pred - y_true) ** 2) * wt).sum()
@@ -131,70 +148,80 @@ class FeatureGraphModel(ppl.LightningModule):
     def r2denominator(self, y_true, wt):
         return ((y_true**2) * wt).sum() + 1e-9
 
+    def r2zmse_batch(self, y_pred, y_true, wt):
+        num = self.r2numerator(y_pred, y_true, wt)
+        den = self.r2denominator(y_true, wt)
+        result = 1 - (num / den)
+        return result, num, den
+
+    def score_output(self, stored_outputs):
+        return 1 - torch.sum(
+            torch.tensor(
+                [val[0] for val in stored_outputs],
+                device=stored_outputs[0][0].device,
+            ),
+        ) / torch.sum(
+            torch.tensor(
+                [val[1] for val in stored_outputs],
+                device=stored_outputs[0][0].device,
+            )
+        )
+
     def validation_step(self, batch, batch_idx):
         X, y = batch
         y_true = y.squeeze(-1)[..., 0]
-        wt = y.squeeze(-1)[..., 1]
         y_pred = self.model(X).squeeze(-1)
         loss = self.loss(y_pred, y_true)
         self.log(
             f"{self.current_stage}_loss",
             loss,
             # prog_bar=True,
-            on_step=False,
+            on_step=True,
             on_epoch=True,
             batch_size=X["decoder_lengths"].size(0),
             sync_dist=True,
         )
-        metrics = {k: v(y_pred.detach(), y_true) for k, v in self.metrics.items()}
+        return loss
+
+    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
+        _, y = batch
+        y_true = y.squeeze(-1)[..., 0]
+        wt = y.squeeze(-1)[..., 1]
+        y_pred = outputs.squeeze(-1).clone()
+        y_pred = y_pred.detach()
+        metrics = {k: v(y_pred, y_true) for k, v in self.metrics.items()}
         self.log_dict(
             {f"{self.current_stage}_{k}": v for k, v in metrics.items()},
             on_epoch=True,
             sync_dist=True,
         )
-        self.validation_step_outputs.append(
-            [
-                self.r2numerator(y_pred.detach(), y_true, wt),
-                self.r2denominator(y_true, wt),
-            ]
-        )
-        return loss
-
-    def on_validation_epoch_end(self):
-        zrmse = torch.sum(
-            (
-                torch.tensor(
-                    [val[0] for val in self.validation_step_outputs],
-                    device=self.validation_step_outputs[0][0].device,
-                )
-            )
-        ) / torch.sum(
-            torch.tensor(
-                [val[1] for val in self.validation_step_outputs],
-                device=self.validation_step_outputs[0][0].device,
-            )
+        score, score_numerator, score_denominator = self.r2zmse_batch(
+            y_pred, y_true, wt
         )
         self.log(
-            f"{self.current_stage}_zrmse", 1 - zrmse, sync_dist=True, prog_bar=True
+            f"{self.current_stage}_score_batch",
+            score,
+            on_step=True,
+            on_epoch=False,
+            rank_zero_only=True,
         )
-        self.log("hp_metric", 1 - zrmse, on_epoch=True, sync_dist=True)
+        # Store the numerator and denominator for the epoch level calculation
+        self.validation_step_outputs.append(
+            [
+                score_numerator,
+                score_denominator,
+            ]
+        )
+
+    def on_validation_epoch_end(self):
+        zrmse = self.score_output(self.validation_step_outputs)
+        self.log(f"{self.current_stage}_score", zrmse, sync_dist=True, prog_bar=True)
+        self.log("hp_metric", zrmse, on_epoch=True, sync_dist=True)
         self.validation_step_outputs.clear()
 
     def on_train_epoch_end(self):
-        zrmse = torch.sum(
-            torch.tensor(
-                [val[0] for val in self.training_step_outputs],
-                device=self.training_step_outputs[0][0].device,
-            ),
-        ) / torch.sum(
-            torch.tensor(
-                [val[1] for val in self.training_step_outputs],
-                device=self.training_step_outputs[0][0].device,
-            )
-        )
-        self.log(
-            f"{self.current_stage}_zrmse", 1 - zrmse, sync_dist=True, prog_bar=True
-        )
+        zrmse = self.score_output(self.training_step_outputs)
+        self.log(f"{self.current_stage}_zrmse", zrmse, sync_dist=True, prog_bar=True)
         self.training_step_outputs.clear()
 
     def configure_optimizers(self):

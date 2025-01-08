@@ -2,6 +2,7 @@ from torch.utils.data import DistributedSampler
 from typing import Optional
 import math
 import torch.distributed as dist
+import polars as pl
 from ..datasets.js_dataset import JSTrainDataset
 
 
@@ -88,9 +89,15 @@ class JSPredictDataSampler(DistributedSampler):
             index = self.mindex.sample(n=self.max_samples, seed=self.seed + self.epoch)
         else:
             index = self.mindex.slice(
-                self.epoch * self.num_replicas * 4000,
-                self.max_samples + self.epoch * self.num_replicas * 4000 + 5000,
+                (self.epoch // 2) * self.max_samples,
+                self.max_samples * (self.epoch // 2 + 1)
+                + 5000,  # slice a bit more to avoid out of bound
             ).slice(0, self.max_samples)
+            if len(index) < self.max_samples:
+                supple = self.mindex.sample(
+                    self.max_samples - len(index) + 100, seed=self.seed + self.epoch
+                )
+                index = pl.concat([index, supple]).slice(0, self.max_samples)
         return index
 
     def __iter__(self):
