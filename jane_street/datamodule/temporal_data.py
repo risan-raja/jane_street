@@ -18,22 +18,29 @@ class JSDataModule(pl.LightningDataModule):
         self.val_batch_size = config.val.batch_size
         self.test_batch_size = config.test.batch_size
         self.n_cardinal = config.train.n_cardinal
+        self.sampling = config.lookback_sampling
 
     def setup(self, stage: Optional[str] = None):
         if stage == "fit":
             self.train_dataset_metadata = JSDatasetMeta(
                 index_path=self.train_index_path
             )
-            self.train_dataset = JSTSDataset(self.train_dataset_metadata)
+            self.train_dataset = JSTSDataset(
+                self.train_dataset_metadata, lookback_sampling=self.sampling
+            )
             self.val_dataset_metadata = JSDatasetMeta(index_path=self.val_index_path)
-            self.val_dataset = JSTSDataset(self.val_dataset_metadata)
+            self.val_dataset = JSTSDataset(
+                self.val_dataset_metadata, lookback_sampling=self.sampling
+            )
         if stage == "test":
             self.test_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
             self.test_dataset = JSTSDataset(self.test_dataset_metadata)
 
     def train_dataloader(self):
         self.train_dataset_metadata = JSDatasetMeta(index_path=self.train_index_path)
-        self.train_dataset = JSTSDataset(self.train_dataset_metadata)
+        self.train_dataset = JSTSDataset(
+            self.train_dataset_metadata, lookback_sampling=self.sampling
+        )
         self.train_sampler = JSTrainDataSampler(
             self.train_dataset,
             batch_size=self.train_batch_size,
@@ -51,7 +58,9 @@ class JSDataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         self.val_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
-        self.val_dataset = JSTSDataset(self.val_dataset_metadata)
+        self.val_dataset = JSTSDataset(
+            self.val_dataset_metadata, lookback_sampling=self.sampling
+        )
         self.val_sampler = JSPredictDataSampler(
             self.val_dataset,
             max_samples=self.config.val_dataset_size,

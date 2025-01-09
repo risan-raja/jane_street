@@ -44,7 +44,7 @@ class JSTrainDataSampler(DistributedSampler):
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
         shuffle: bool = True,
-        seed: int = 42,
+        seed: int = 212,
         batch_size: int = 64,
         drop_last: bool = True,
         n_cardinal: int = 2,
@@ -95,7 +95,7 @@ class JSTrainDataSampler(DistributedSampler):
             g.manual_seed(self.seed + self.epoch + int(tstep_idx))
             if tstep_idx < 848:
                 dates = torch.randint(
-                    self.date_min,
+                    500,
                     self.date_max + 1,
                     (self.batch_size * self.num_replicas,),
                     generator=g,

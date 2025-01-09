@@ -421,15 +421,4 @@ class TFT(nn.Module, TupleOutputMixIn):
         # print(output.shape)
         # However we need the last decoded step and disregard the padding.
         # print(f'Output Shape is {output.shape}')
-        decoder_lengths = torch.ones_like(decoder_lengths)
-        return self.to_network_output(
-            prediction=output,
-            # attention=attn_output_weights,
-            # static_variables=torch.cat(
-            #     [enc_static_variable_selection, dec_static_variable_selection], dim=1
-            # ),
-            # encoder_variables=encoder_sparse_weights,
-            # decoder_variables=decoder_sparse_weights,
-            encoder_lengths=encoder_lengths,
-            decoder_lengths=decoder_lengths,
-        )
+        return output

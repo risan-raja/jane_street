@@ -89,8 +89,8 @@ class JSPredictDataSampler(DistributedSampler):
             index = self.mindex.sample(n=self.max_samples, seed=self.seed + self.epoch)
         else:
             index = self.mindex.slice(
-                (self.epoch // 2) * self.max_samples,
-                self.max_samples * (self.epoch // 2 + 1)
+                (self.epoch // 4) * self.max_samples,
+                self.max_samples * ((self.epoch // 4) + 1)
                 + 5000,  # slice a bit more to avoid out of bound
             ).slice(0, self.max_samples)
             if len(index) < self.max_samples:

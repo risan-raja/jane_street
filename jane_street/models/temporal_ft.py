@@ -1,6 +1,7 @@
 from lightning.pytorch.trainer.states import RunningStage
+from typing import Dict
+from omegaconf import DictConfig
 import pytorch_lightning as ppl
-from ..layers.fgraph import FeatureGraph
 from pytorch_lightning.callbacks import (
     EarlyStopping,
     GradientAccumulationScheduler,
@@ -14,10 +15,8 @@ from torchmetrics import (
     R2Score,
     MeanAbsoluteError,
     NormalizedRootMeanSquaredError,
-    # MeanAbsolutePercentageError,
-    # RelativeSquaredError,
-    # SymmetricMeanAbsolutePercentageError,
 )
+from ..layers.tft import TFT
 
 
 STAGE_STATES = {
@@ -29,26 +28,23 @@ STAGE_STATES = {
 }
 
 
-class FeatureGraphModel(ppl.LightningModule):
-    def __init__(self, config):
+class TemporalFT(ppl.LightningModule):
+    def __init__(self, master_conf: DictConfig):
         super().__init__()
-        self.model = FeatureGraph(config)
-        self.config = config
-        self.save_hyperparameters(config)
+        self.save_hyperparameters(master_conf)
+        self.config = master_conf
+        self.model = TFT(master_conf)
         self.mse = NormalizedRootMeanSquaredError(normalization="mean")
         self.loss = MeanSquaredError()
         self.r2 = R2Score()
         self.mae = MeanAbsoluteError()
-        # self.mape = MeanAbsolutePercentageError()
-        # self.rse = RelativeSquaredError()
-        # self.smape = SymmetricMeanAbsolutePercentageError()
         self.metrics = {
             "mse": self.mse,
             "r2": self.r2,
             "mae": self.mae,
         }
-        self.learning_rate = config.learning_rate
-        self.weight_decay = config.weight_decay
+        self.learning_rate = self.config.learning_rate
+        self.weight_decay = self.config.weight_decay
         self.example_input_array = (
             {
                 "encoder_lengths": torch.tensor([10, 10, 10, 10, 10]),
@@ -63,6 +59,52 @@ class FeatureGraphModel(ppl.LightningModule):
         self.validation_step_outputs = []
         self.training_step_outputs = []
 
+    def configure_callbacks(self):
+        early_stopping = EarlyStopping(
+            monitor="val_loss",
+            patience=5,
+            verbose=False,
+            mode="min",
+            min_delta=1e-9,
+            # stopping_threshold=1e-5,
+        )
+        checkpoint = ModelCheckpoint(
+            dirpath="/storage/atlasAppRaja/library/atlas/model_checkpts/",
+            monitor="val_score",
+            filename="{epoch}-{val_score:.2f}-temporal-ft",
+            save_top_k=10,
+            mode="max",
+            every_n_train_steps=200,
+            verbose=False,
+            enable_version_counter=True,
+        )
+        swa = StochasticWeightAveraging(swa_lrs=1e-3, swa_epoch_start=3)
+        accumulator = GradientAccumulationScheduler(scheduling={2: 2})
+        lr_monitor = LearningRateMonitor(logging_interval="step")
+        return [early_stopping, checkpoint, swa, accumulator, lr_monitor]
+
+    def forward(self, X: Dict[str, torch.Tensor]) -> torch.Tensor:
+        return self.model(X)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(
+            self.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.config.weight_decay,
+        )
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", patience=5, factor=0.8
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "monitor": "val_loss",
+                "interval": "epoch",
+                "frequency": 6,
+            },
+        }
+
     @property
     def current_stage(self) -> str:
         """
@@ -72,6 +114,9 @@ class FeatureGraphModel(ppl.LightningModule):
         return STAGE_STATES.get(self.trainer.state.stage, None)
 
     def training_step(self, batch, batch_idx):
+        """
+        Train on batch.
+        """
         X, y = batch
         y_true = y.squeeze(-1)[..., 0]
         y_pred = self.model(X).squeeze(-1)
@@ -126,34 +171,15 @@ class FeatureGraphModel(ppl.LightningModule):
         if batch_idx == 0 and self.current_epoch == 0:
             self.log(
                 "val_score",
-                torch.tensor(-0.9, device=y.device),
+                outputs["loss"],
                 on_step=True,
                 sync_dist=True,
             )
 
-    def configure_callbacks(self):
-        early_stopping = EarlyStopping(
-            monitor="val_score",
-            patience=5,
-            verbose=False,
-            mode="max",
-            min_delta=1e-5,
-            # stopping_threshold=1e-5,
-        )
-        checkpoint = ModelCheckpoint(
-            dirpath="/storage/atlasAppRaja/library/atlas/model_checkpts/",
-            monitor="val_score",
-            filename="{epoch}-{val_score:.2f}-feature_graph",
-            save_top_k=10,
-            mode="max",
-            every_n_train_steps=200,
-            verbose=False,
-            enable_version_counter=True,
-        )
-        swa = StochasticWeightAveraging(swa_lrs=1e-3, swa_epoch_start=3)
-        accumulator = GradientAccumulationScheduler(scheduling={2: 4})
-        lr_monitor = LearningRateMonitor(logging_interval="step")
-        return [early_stopping, checkpoint, swa, accumulator, lr_monitor]
+    def on_train_epoch_end(self):
+        zrmse = self.score_output(self.training_step_outputs)
+        self.log(f"{self.current_stage}_zrmse", zrmse, sync_dist=True, prog_bar=True)
+        self.training_step_outputs.clear()
 
     def r2numerator(self, y_pred, y_true, wt):
         return (((y_pred - y_true) ** 2) * wt).sum()
@@ -237,30 +263,3 @@ class FeatureGraphModel(ppl.LightningModule):
         self.log(f"{self.current_stage}_score", zrmse, sync_dist=True, prog_bar=True)
         self.log("hp_metric", zrmse, on_epoch=True, sync_dist=True)
         self.validation_step_outputs.clear()
-
-    def on_train_epoch_end(self):
-        zrmse = self.score_output(self.training_step_outputs)
-        self.log(f"{self.current_stage}_zrmse", zrmse, sync_dist=True, prog_bar=True)
-        self.training_step_outputs.clear()
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            self.parameters(),
-            lr=self.learning_rate,
-            weight_decay=self.weight_decay,
-        )
-        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", patience=5, factor=0.8
-        )
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "monitor": "val_loss",
-                "interval": "epoch",
-                "frequency": 6,
-            },
-        }
-
-    def forward(self, X):
-        return self.model(X)
