@@ -10,10 +10,14 @@ from pytorch_lightning.callbacks import (
 )
 import torch
 from torchmetrics import (
+    # MeanAbsolutePercentageError,
     MeanSquaredError,
     R2Score,
     MeanAbsoluteError,
     NormalizedRootMeanSquaredError,
+    RelativeSquaredError,
+    MetricCollection,
+    # SymmetricMeanAbsolutePercentageError,
     # MeanAbsolutePercentageError,
     # RelativeSquaredError,
     # SymmetricMeanAbsolutePercentageError,
@@ -35,18 +39,23 @@ class FeatureGraphModel(ppl.LightningModule):
         self.model = FeatureGraph(config)
         self.config = config
         self.save_hyperparameters(config)
-        self.mse = NormalizedRootMeanSquaredError(normalization="mean")
-        self.loss = MeanSquaredError()
-        self.r2 = R2Score()
+        self.nmse = NormalizedRootMeanSquaredError(normalization="mean")
+        self.mse = MeanSquaredError()
+        self.loss = R2Score()
         self.mae = MeanAbsoluteError()
         # self.mape = MeanAbsolutePercentageError()
         # self.rse = RelativeSquaredError()
         # self.smape = SymmetricMeanAbsolutePercentageError()
-        self.metrics = {
-            "mse": self.mse,
-            "r2": self.r2,
-            "mae": self.mae,
-        }
+        metrics = MetricCollection(
+            {
+                "mse": self.mse,
+                # "r2": self.r2,
+                "mae": self.mae,
+                "nmse": self.nmse,
+            }
+        )
+        self.train_metrics = metrics.clone(prefix="train_")
+        self.val_metrics = metrics.clone(prefix="val_")
         self.learning_rate = config.learning_rate
         self.weight_decay = config.weight_decay
         self.example_input_array = (
@@ -62,6 +71,8 @@ class FeatureGraphModel(ppl.LightningModule):
         )
         self.validation_step_outputs = []
         self.training_step_outputs = []
+        self.objective = "min" if config.objective == "min" else "max"
+        self.bootstrap_metric = "val_score"
 
     @property
     def current_stage(self) -> str:
@@ -71,14 +82,24 @@ class FeatureGraphModel(ppl.LightningModule):
         """
         return STAGE_STATES.get(self.trainer.state.stage, None)
 
+    def sep_wt_target(self, y):
+        return y.squeeze(-1)[..., 0], y.squeeze(-1)[..., 1]
+
+    def to_prediction(self, y_pred: torch.Tensor):
+        if y_pred.ndim == 3:
+            B, _, D = y_pred.size()
+            return y_pred.reshape((B, D))
+        if y_pred.ndim == 2:
+            return y_pred
+
     def training_step(self, batch, batch_idx):
         X, y = batch
-        y_true = y.squeeze(-1)[..., 0]
-        y_pred = self.model(X).squeeze(-1)
+        y_true, _ = self.sep_wt_target(y)
+        y_pred = self.to_prediction(self.model(X))
         loss = self.loss(y_pred, y_true)
         self.log(
             f"{self.current_stage}_loss",
-            loss,
+            loss if loss.size() == 1 else loss.mean(),
             prog_bar=True,
             on_step=True,
             on_epoch=True,
@@ -89,44 +110,34 @@ class FeatureGraphModel(ppl.LightningModule):
 
     def on_train_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
         _, y = batch
-        y_true = y.squeeze(-1)[..., 0]
-        wt = y.squeeze(-1)[..., 1]
+        y_true, wt = self.sep_wt_target(y)
         y_pred = outputs["prediction"].clone()
         y_pred = y_pred.detach()
-        if y_pred.ndim != y_true.ndim:
-            if y_pred.ndim < y_true.ndim:
-                y_pred = y_pred.unsqueeze(-1)
-            else:
-                y_true = y_true.unsqueeze(-1)
-        metrics = {k: v(y_pred, y_true) for k, v in self.metrics.items()}
+        # if y_pred.ndim != y_true.ndim:
+        #     if y_pred.ndim < y_true.ndim:
+        #         y_pred = y_pred.unsqueeze(-1)
+        #     else:
+        #         if y_pred.ndim == 3:
+        #             B, _, D = y_pred.size()
+        #             y_pred = y_pred.reshape(B, D)
+        #         if y_true.ndim == 3:
+        #             B, _, D = y_true.size()
+        #             y_true = y_true.reshape(B, D)
+        metrics = self.train_metrics(y_pred, y_true)
         self.log_dict(
-            {f"{self.current_stage}_{k}": v for k, v in metrics.items()},
+            {k: v if v.size() == 1 else v.mean() for k, v in metrics.items()},
             on_step=True,
             on_epoch=False,
             sync_dist=True,
         )
-        score, score_numerator, score_denominator = self.r2zmse_batch(
-            y_pred, y_true, wt
-        )
-        self.log(
-            f"{self.current_stage}_score_batch",
-            score,
-            on_step=True,
-            on_epoch=False,
-            # rank_zero_only=True,
-            sync_dist=True,
-        )
-        # Store the numerator and denominator for the epoch level calculation
-        self.training_step_outputs.append(
-            [
-                score_numerator,
-                score_denominator,
-            ]
-        )
+        score_numerator, score_denominator = self.log_zrmse_batch(y_pred, y_true, wt)
         if batch_idx == 0 and self.current_epoch == 0:
             self.log(
-                "val_score",
-                torch.tensor(-0.9, device=y.device),
+                self.bootstrap_metric,
+                1
+                - (
+                    score_numerator / score_denominator
+                ).mean(),  # Safety for multi-output
                 on_step=True,
                 sync_dist=True,
             )
@@ -134,7 +145,7 @@ class FeatureGraphModel(ppl.LightningModule):
     def configure_callbacks(self):
         early_stopping = EarlyStopping(
             monitor="val_score",
-            patience=5,
+            patience=10,
             verbose=False,
             mode="max",
             min_delta=1e-5,
@@ -168,26 +179,29 @@ class FeatureGraphModel(ppl.LightningModule):
         return result, num, den
 
     def score_output(self, stored_outputs):
-        return 1 - torch.sum(
-            torch.tensor(
-                [val[0] for val in stored_outputs],
-                device=stored_outputs[0][0].device,
-            ),
-        ) / torch.sum(
-            torch.tensor(
-                [val[1] for val in stored_outputs],
-                device=stored_outputs[0][0].device,
+        return 1 - (
+            torch.sum(
+                torch.tensor(
+                    [val[0] for val in stored_outputs],
+                    device=stored_outputs[0][0].device,
+                ),
+            )
+            / torch.sum(
+                torch.tensor(
+                    [val[1] for val in stored_outputs],
+                    device=stored_outputs[0][0].device,
+                )
             )
         )
 
     def validation_step(self, batch, batch_idx):
         X, y = batch
-        y_true = y.squeeze(-1)[..., 0]
-        y_pred = self.model(X).squeeze(-1)
+        y_true, _ = self.sep_wt_target(y)
+        y_pred = self.to_prediction(self.model(X))
         loss = self.loss(y_pred, y_true)
         self.log(
             f"{self.current_stage}_loss",
-            loss,
+            loss if loss.size() == 1 else loss.mean(),
             # prog_bar=True,
             on_step=True,
             on_epoch=True,
@@ -196,23 +210,7 @@ class FeatureGraphModel(ppl.LightningModule):
         )
         return {"loss": loss, "prediction": y_pred}
 
-    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
-        _, y = batch
-        y_true = y.squeeze(-1)[..., 0]
-        wt = y.squeeze(-1)[..., 1]
-        y_pred = outputs["prediction"].clone()
-        y_pred = y_pred.detach()
-        if y_pred.ndim != y_true.ndim:
-            if y_pred.ndim < y_true.ndim:
-                y_pred = y_pred.unsqueeze(-1)
-            else:
-                y_true = y_true.unsqueeze(-1)
-        metrics = {k: v(y_pred, y_true) for k, v in self.metrics.items()}
-        self.log_dict(
-            {f"{self.current_stage}_{k}": v for k, v in metrics.items()},
-            on_epoch=True,
-            sync_dist=True,
-        )
+    def log_zrmse_batch(self, y_pred, y_true, wt):
         score, score_numerator, score_denominator = self.r2zmse_batch(
             y_pred, y_true, wt
         )
@@ -224,6 +222,37 @@ class FeatureGraphModel(ppl.LightningModule):
             # rank_zero_only=True,
             sync_dist=True,
         )
+        return score_numerator, score_denominator
+
+    def log_zrmse_epoch(self):
+        zrmse = self.score_output(self.validation_step_outputs)
+        self.log(f"{self.current_stage}_score", zrmse, sync_dist=True, prog_bar=True)
+        if self.current_stage == "val":
+            self.log("hp_metric", zrmse, on_epoch=True, sync_dist=True)
+
+    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
+        _, y = batch
+        y_true, wt = self.sep_wt_target(y)
+        y_pred = outputs["prediction"].clone()
+        y_pred = y_pred.detach()
+        # if y_pred.ndim != y_true.ndim:
+        #     if y_pred.ndim < y_true.ndim:
+        #         y_pred = y_pred.unsqueeze(-1)
+        #     else:
+        #         if y_pred.ndim == 3:
+        #             B, _, D = y_pred.size()
+        #             y_pred = y_pred.reshape(B, D)
+        #         if y_true.ndim == 3:
+        #             B, _, D = y_true.size()
+        #             y_true = y_true.reshape(B, D)
+        metrics = self.val_metrics(y_pred, y_true)
+        self.log_dict(
+            {k: v if v.size() == 1 else v.mean() for k, v in metrics.items()},
+            on_step=True,
+            on_epoch=True,
+            sync_dist=True,
+        )
+        score_numerator, score_denominator = self.log_zrmse_batch(y_pred, y_true, wt)
         # Store the numerator and denominator for the epoch level calculation
         self.validation_step_outputs.append(
             [
@@ -233,14 +262,11 @@ class FeatureGraphModel(ppl.LightningModule):
         )
 
     def on_validation_epoch_end(self):
-        zrmse = self.score_output(self.validation_step_outputs)
-        self.log(f"{self.current_stage}_score", zrmse, sync_dist=True, prog_bar=True)
-        self.log("hp_metric", zrmse, on_epoch=True, sync_dist=True)
+        self.log_zrmse_epoch()
         self.validation_step_outputs.clear()
 
     def on_train_epoch_end(self):
-        zrmse = self.score_output(self.training_step_outputs)
-        self.log(f"{self.current_stage}_zrmse", zrmse, sync_dist=True, prog_bar=True)
+        self.log_zrmse_epoch()
         self.training_step_outputs.clear()
 
     def configure_optimizers(self):
@@ -248,19 +274,99 @@ class FeatureGraphModel(ppl.LightningModule):
             self.parameters(),
             lr=self.learning_rate,
             weight_decay=self.weight_decay,
+            maximize=True if self.objective == "max" else False,
         )
-        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", patience=5, factor=0.8
-        )
+        # lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        #     optimizer, mode="min", patience=5, factor=0.8
+        # )
         return {
             "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "monitor": "val_loss",
-                "interval": "epoch",
-                "frequency": 6,
-            },
         }
 
     def forward(self, X):
         return self.model(X)
+
+
+class FeatureGraphMulti(FeatureGraphModel):
+    def __init__(self, config):
+        super().__init__(config)
+        self.model = FeatureGraph(config)
+        self.save_hyperparameters(config)
+        self.loss = NormalizedRootMeanSquaredError(normalization="mean", num_outputs=3)
+        self.mse = MeanSquaredError(num_outputs=3)
+        self.r2 = R2Score(multioutput="raw_values")
+        self.mae = MeanAbsoluteError(num_outputs=3)
+        # self.mape = MeanAbsolutePercentageError()
+        self.rse = RelativeSquaredError(num_outputs=3)
+        # self.smape = SymmetricMeanAbsolutePercentageError()
+        self.metrics = {
+            "mse": self.mse,
+            "r2": self.r2,
+            "mae": self.mae,
+            # "nmse": self.nmse,
+        }
+        self.bootstrap_metric = "val_resp_6_score"
+        self.responder_ids = [6, 7, 8]
+
+    def sep_wt_target(self, y):
+        # Make it to BXoutput_size , BX1
+        return y.squeeze(1)[..., :3].squeeze(1), y.squeeze(1)[..., 3:].squeeze(1)
+
+    def r2numerator(self, y_pred, y_true, wt):
+        return (((y_pred - y_true).pow(2)) * wt).sum(dim=0)
+
+    def r2denominator(self, y_true, wt):
+        return ((y_true.pow(2)) * wt).sum(dim=0) + 1e-9
+
+    def log_zrmse_batch(self, y_pred, y_true, wt):
+        score, score_numerator, score_denominator = self.r2zmse_batch(
+            y_pred, y_true, wt
+        )
+        for idx, loc in enumerate(self.responder_ids):
+            self.log(
+                f"{self.current_stage}_resp_{loc}_score_step",
+                score[idx],
+                on_step=True,
+                on_epoch=False,
+                # rank_zero_only=True,
+                sync_dist=True,
+            )
+        return score_numerator, score_denominator
+
+    def log_zrmse_epoch(self):
+        zrmse = self.score_output(self.validation_step_outputs)
+        for idx, loc in enumerate(self.responder_ids):
+            self.log(
+                f"{self.current_stage}_resp_{loc}_score",
+                zrmse[idx],
+                on_epoch=True,
+                on_step=False,
+                sync_dist=True,
+                prog_bar=True,
+            )
+        if self.current_stage == "val":
+            self.log("hp_metric", zrmse.mean(), on_epoch=True, sync_dist=True)
+
+    def configure_callbacks(self):
+        early_stopping = EarlyStopping(
+            monitor="val_resp_6_score",
+            patience=10,
+            verbose=False,
+            mode="max",
+            min_delta=1e-5,
+            # stopping_threshold=1e-5,
+        )
+        checkpoint = ModelCheckpoint(
+            dirpath="/storage/atlasAppRaja/library/atlas/model_checkpts/",
+            monitor="val_resp_6_score",
+            filename="{epoch}-{val_resp_6_score:.2f}-feature_graph",
+            save_top_k=10,
+            mode="max",
+            every_n_train_steps=200,
+            verbose=False,
+            enable_version_counter=True,
+        )
+        swa = StochasticWeightAveraging(swa_lrs=1e-3, swa_epoch_start=2)
+        accumulator = GradientAccumulationScheduler(scheduling={1: 4})
+        lr_monitor = LearningRateMonitor(logging_interval="step")
+        return [early_stopping, checkpoint, swa, accumulator, lr_monitor]
