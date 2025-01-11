@@ -34,13 +34,13 @@ class TemporalFT(ppl.LightningModule):
         self.save_hyperparameters(master_conf)
         self.config = master_conf
         self.model = TFT(master_conf)
-        self.mse = NormalizedRootMeanSquaredError(normalization="mean")
-        self.loss = MeanSquaredError()
-        self.r2 = R2Score()
+        self.nmse = NormalizedRootMeanSquaredError(normalization="mean")
+        self.mse = MeanSquaredError()
+        self.loss = R2Score()
         self.mae = MeanAbsoluteError()
         self.metrics = {
             "mse": self.mse,
-            "r2": self.r2,
+            "nmse": self.nmse,
             "mae": self.mae,
         }
         self.learning_rate = self.config.learning_rate
@@ -64,7 +64,7 @@ class TemporalFT(ppl.LightningModule):
             monitor="val_loss",
             patience=5,
             verbose=False,
-            mode="min",
+            mode="max",
             min_delta=1e-9,
             # stopping_threshold=1e-5,
         )
@@ -72,14 +72,14 @@ class TemporalFT(ppl.LightningModule):
             dirpath="/storage/atlasAppRaja/library/atlas/model_checkpts/",
             monitor="val_score",
             filename="{epoch}-{val_score:.2f}-temporal-ft",
-            save_top_k=10,
+            save_top_k=30,
             mode="max",
             every_n_train_steps=200,
             verbose=False,
             enable_version_counter=True,
         )
         swa = StochasticWeightAveraging(swa_lrs=1e-3, swa_epoch_start=3)
-        accumulator = GradientAccumulationScheduler(scheduling={2: 2})
+        accumulator = GradientAccumulationScheduler(scheduling={1: 2})
         lr_monitor = LearningRateMonitor(logging_interval="step")
         return [early_stopping, checkpoint, swa, accumulator, lr_monitor]
 
@@ -91,6 +91,7 @@ class TemporalFT(ppl.LightningModule):
             self.parameters(),
             lr=self.learning_rate,
             weight_decay=self.config.weight_decay,
+            maximize=True,
         )
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", patience=5, factor=0.8

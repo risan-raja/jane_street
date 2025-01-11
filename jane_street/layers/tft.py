@@ -414,10 +414,20 @@ class TFT(nn.Module, TupleOutputMixIn):
         output = self.pre_output_gate_norm(output, lstm_output_decoder)  # B x T x 3
         output = self.revin[self.target_name](output, mode="denorm")
         output = self.output_layer(output)  # This is the last step.
-        output = torch.stack(
-            [output[i, x["decoder_lengths"][i] - 1, :] for i in range(output.size(0))],
-            dim=0,
-        ).unsqueeze(-1)
+        output = (
+            torch.stack(
+                [
+                    output[i, x["decoder_lengths"][i] - 1, :]
+                    for i in range(output.size(0))
+                ],
+                dim=0,
+            )
+            .unsqueeze(-1)
+            .clamp(
+                min=torch.tensor(-5.0).to(output.device),
+                max=torch.tensor(5.0).to(output.device),
+            )
+        )
         # print(output.shape)
         # However we need the last decoded step and disregard the padding.
         # print(f'Output Shape is {output.shape}')

@@ -88,8 +88,8 @@ class JSTrainDataSampler(DistributedSampler):
         g.manual_seed(self.seed + self.epoch)
         tsteps = [np.arange(1, 969) for _ in range(self.n_cardinal)]
         tsteps = np.concatenate(tsteps)
-        perm = torch.randperm(len(tsteps), generator=g).numpy()
-        tsteps = tsteps[perm]
+        # perm = torch.randperm(len(tsteps), generator=g).numpy()
+        # tsteps = tsteps[perm]
         batch_dates = []
         for tstep_idx in tsteps:
             g.manual_seed(self.seed + self.epoch + int(tstep_idx))

@@ -23,7 +23,6 @@ from torchmetrics import (
     # SymmetricMeanAbsolutePercentageError,
 )
 
-
 STAGE_STATES = {
     RunningStage.TRAINING: "train",
     RunningStage.VALIDATING: "val",
@@ -41,15 +40,15 @@ class FeatureGraphModel(ppl.LightningModule):
         self.save_hyperparameters(config)
         self.nmse = NormalizedRootMeanSquaredError(normalization="mean")
         self.mse = MeanSquaredError()
-        self.loss = R2Score()
+        self.r2 = R2Score()
         self.mae = MeanAbsoluteError()
         # self.mape = MeanAbsolutePercentageError()
-        # self.rse = RelativeSquaredError()
+        self.loss = RelativeSquaredError()
         # self.smape = SymmetricMeanAbsolutePercentageError()
         metrics = MetricCollection(
             {
                 "mse": self.mse,
-                # "r2": self.r2,
+                "r2": self.r2,
                 "mae": self.mae,
                 "nmse": self.nmse,
             }
@@ -92,20 +91,36 @@ class FeatureGraphModel(ppl.LightningModule):
         if y_pred.ndim == 2:
             return y_pred
 
-    def training_step(self, batch, batch_idx):
-        X, y = batch
-        y_true, _ = self.sep_wt_target(y)
-        y_pred = self.to_prediction(self.model(X))
-        loss = self.loss(y_pred, y_true)
+    def log_loss(self, loss, batch_size):
         self.log(
             f"{self.current_stage}_loss",
             loss if loss.size() == 1 else loss.mean(),
             prog_bar=True,
             on_step=True,
             on_epoch=True,
-            batch_size=X["decoder_lengths"].size(0),
+            batch_size=batch_size,
             sync_dist=True,
         )
+
+    def log_metrics(self, y_pred, y_true):
+        if self.current_stage == "train":
+            metrics = self.train_metrics(y_pred, y_true)
+        else:
+            metrics = self.val_metrics(y_pred, y_true)
+
+        self.log_dict(
+            {k: v if v.size() == 1 else v.mean() for k, v in metrics.items()},
+            on_step=True,
+            on_epoch=True,
+            sync_dist=True,
+        )
+
+    def training_step(self, batch, batch_idx):
+        X, y = batch
+        y_true, _ = self.sep_wt_target(y)
+        y_pred = self.to_prediction(self.model(X))
+        loss = self.loss(y_pred, y_true)
+        self.log_loss(loss, X["decoder_lengths"].size(0))
         return {"loss": loss, "prediction": y_pred}
 
     def on_train_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
@@ -113,23 +128,7 @@ class FeatureGraphModel(ppl.LightningModule):
         y_true, wt = self.sep_wt_target(y)
         y_pred = outputs["prediction"].clone()
         y_pred = y_pred.detach()
-        # if y_pred.ndim != y_true.ndim:
-        #     if y_pred.ndim < y_true.ndim:
-        #         y_pred = y_pred.unsqueeze(-1)
-        #     else:
-        #         if y_pred.ndim == 3:
-        #             B, _, D = y_pred.size()
-        #             y_pred = y_pred.reshape(B, D)
-        #         if y_true.ndim == 3:
-        #             B, _, D = y_true.size()
-        #             y_true = y_true.reshape(B, D)
-        metrics = self.train_metrics(y_pred, y_true)
-        self.log_dict(
-            {k: v if v.size() == 1 else v.mean() for k, v in metrics.items()},
-            on_step=True,
-            on_epoch=False,
-            sync_dist=True,
-        )
+        self.log_metrics(y_pred, y_true)
         score_numerator, score_denominator = self.log_zrmse_batch(y_pred, y_true, wt)
         if batch_idx == 0 and self.current_epoch == 0:
             self.log(
@@ -141,6 +140,64 @@ class FeatureGraphModel(ppl.LightningModule):
                 on_step=True,
                 sync_dist=True,
             )
+        # Store the numerator and denominator for the epoch level calculation
+        self.training_step_outputs.append(
+            [
+                score_numerator,
+                score_denominator,
+            ]
+        )
+
+    def validation_step(self, batch, batch_idx):
+        X, y = batch
+        y_true, _ = self.sep_wt_target(y)
+        y_pred = self.to_prediction(self.model(X))
+        loss = self.loss(y_pred, y_true)
+        self.log_loss(loss, X["decoder_lengths"].size(0))
+        return {"loss": loss, "prediction": y_pred}
+
+    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
+        _, y = batch
+        y_true, wt = self.sep_wt_target(y)
+        y_pred = outputs["prediction"].clone()
+        y_pred = y_pred.detach()
+        self.log_metrics(y_pred, y_true)
+        score_numerator, score_denominator = self.log_zrmse_batch(y_pred, y_true, wt)
+        # Store the numerator and denominator for the epoch level calculation
+        self.validation_step_outputs.append(
+            [
+                score_numerator,
+                score_denominator,
+            ]
+        )
+
+    def on_validation_epoch_end(self):
+        self.log_zrmse_epoch(self.validation_step_outputs)
+        self.validation_step_outputs.clear()
+
+    def on_train_epoch_end(self):
+        self.log_zrmse_epoch(self.training_step_outputs)
+        self.training_step_outputs.clear()
+
+    def log_zrmse_batch(self, y_pred, y_true, wt):
+        score, score_numerator, score_denominator = self.r2zmse_batch(
+            y_pred, y_true, wt
+        )
+        self.log(
+            f"{self.current_stage}_score_batch",
+            score,
+            on_step=True,
+            on_epoch=False,
+            # rank_zero_only=True,
+            sync_dist=True,
+        )
+        return score_numerator, score_denominator
+
+    def log_zrmse_epoch(self, outputs):
+        zrmse = self.score_output(outputs)
+        self.log(f"{self.current_stage}_score", zrmse, sync_dist=True, prog_bar=True)
+        if self.current_stage == "val":
+            self.log("hp_metric", zrmse, on_epoch=True, sync_dist=True)
 
     def configure_callbacks(self):
         early_stopping = EarlyStopping(
@@ -194,81 +251,6 @@ class FeatureGraphModel(ppl.LightningModule):
             )
         )
 
-    def validation_step(self, batch, batch_idx):
-        X, y = batch
-        y_true, _ = self.sep_wt_target(y)
-        y_pred = self.to_prediction(self.model(X))
-        loss = self.loss(y_pred, y_true)
-        self.log(
-            f"{self.current_stage}_loss",
-            loss if loss.size() == 1 else loss.mean(),
-            # prog_bar=True,
-            on_step=True,
-            on_epoch=True,
-            batch_size=X["decoder_lengths"].size(0),
-            sync_dist=True,
-        )
-        return {"loss": loss, "prediction": y_pred}
-
-    def log_zrmse_batch(self, y_pred, y_true, wt):
-        score, score_numerator, score_denominator = self.r2zmse_batch(
-            y_pred, y_true, wt
-        )
-        self.log(
-            f"{self.current_stage}_score_batch",
-            score,
-            on_step=True,
-            on_epoch=False,
-            # rank_zero_only=True,
-            sync_dist=True,
-        )
-        return score_numerator, score_denominator
-
-    def log_zrmse_epoch(self):
-        zrmse = self.score_output(self.validation_step_outputs)
-        self.log(f"{self.current_stage}_score", zrmse, sync_dist=True, prog_bar=True)
-        if self.current_stage == "val":
-            self.log("hp_metric", zrmse, on_epoch=True, sync_dist=True)
-
-    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
-        _, y = batch
-        y_true, wt = self.sep_wt_target(y)
-        y_pred = outputs["prediction"].clone()
-        y_pred = y_pred.detach()
-        # if y_pred.ndim != y_true.ndim:
-        #     if y_pred.ndim < y_true.ndim:
-        #         y_pred = y_pred.unsqueeze(-1)
-        #     else:
-        #         if y_pred.ndim == 3:
-        #             B, _, D = y_pred.size()
-        #             y_pred = y_pred.reshape(B, D)
-        #         if y_true.ndim == 3:
-        #             B, _, D = y_true.size()
-        #             y_true = y_true.reshape(B, D)
-        metrics = self.val_metrics(y_pred, y_true)
-        self.log_dict(
-            {k: v if v.size() == 1 else v.mean() for k, v in metrics.items()},
-            on_step=True,
-            on_epoch=True,
-            sync_dist=True,
-        )
-        score_numerator, score_denominator = self.log_zrmse_batch(y_pred, y_true, wt)
-        # Store the numerator and denominator for the epoch level calculation
-        self.validation_step_outputs.append(
-            [
-                score_numerator,
-                score_denominator,
-            ]
-        )
-
-    def on_validation_epoch_end(self):
-        self.log_zrmse_epoch()
-        self.validation_step_outputs.clear()
-
-    def on_train_epoch_end(self):
-        self.log_zrmse_epoch()
-        self.training_step_outputs.clear()
-
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.parameters(),
@@ -292,21 +274,28 @@ class FeatureGraphMulti(FeatureGraphModel):
         super().__init__(config)
         self.model = FeatureGraph(config)
         self.save_hyperparameters(config)
-        self.loss = NormalizedRootMeanSquaredError(normalization="mean", num_outputs=3)
+        self.nmse = NormalizedRootMeanSquaredError(normalization="mean", num_outputs=3)
         self.mse = MeanSquaredError(num_outputs=3)
         self.r2 = R2Score(multioutput="raw_values")
         self.mae = MeanAbsoluteError(num_outputs=3)
+        self.loss = None
         # self.mape = MeanAbsolutePercentageError()
-        self.rse = RelativeSquaredError(num_outputs=3)
+        self.loss_fn = RelativeSquaredError(num_outputs=3)
         # self.smape = SymmetricMeanAbsolutePercentageError()
         self.metrics = {
-            "mse": self.mse,
+            "nmse": self.nmse,
             "r2": self.r2,
             "mae": self.mae,
+            "mse": self.mse,
             # "nmse": self.nmse,
         }
         self.bootstrap_metric = "val_resp_6_score"
         self.responder_ids = [6, 7, 8]
+
+    def loss(self, y_pred, y_true):
+        output = self.loss_fn(y_pred, y_true)  # R6; R7; R8
+        wt_vector = torch.Tensor([0.6, 0.1, 0.3]).to(y_pred.device)
+        return (output * wt_vector).sum()
 
     def sep_wt_target(self, y):
         # Make it to BXoutput_size , BX1
@@ -333,8 +322,8 @@ class FeatureGraphMulti(FeatureGraphModel):
             )
         return score_numerator, score_denominator
 
-    def log_zrmse_epoch(self):
-        zrmse = self.score_output(self.validation_step_outputs)
+    def log_zrmse_epoch(self, outputs):
+        zrmse = self.score_output(outputs)
         for idx, loc in enumerate(self.responder_ids):
             self.log(
                 f"{self.current_stage}_resp_{loc}_score",
@@ -346,6 +335,12 @@ class FeatureGraphMulti(FeatureGraphModel):
             )
         if self.current_stage == "val":
             self.log("hp_metric", zrmse.mean(), on_epoch=True, sync_dist=True)
+
+    def score_output(self, stored_outputs):
+        # print(stored_outputs)
+        num_tensor = torch.stack([val[0] for val in stored_outputs], dim=0).sum(dim=0)
+        den_tensor = torch.stack([val[1] for val in stored_outputs], dim=0).sum(dim=0)
+        return (1 - (num_tensor / den_tensor)).reshape(-1)
 
     def configure_callbacks(self):
         early_stopping = EarlyStopping(
@@ -370,3 +365,22 @@ class FeatureGraphMulti(FeatureGraphModel):
         accumulator = GradientAccumulationScheduler(scheduling={1: 4})
         lr_monitor = LearningRateMonitor(logging_interval="step")
         return [early_stopping, checkpoint, swa, accumulator, lr_monitor]
+
+    def log_metrics(self, y_pred: torch.Tensor, y_true: torch.Tensor):
+        if self.current_stage == "train":
+            assert y_pred.size() == y_true.size()
+            metrics = self.train_metrics(
+                y_pred.unsqueeze(1).contiguous(), y_true.unsqueeze(1).contiguous()
+            )
+        else:
+            assert y_pred.size() == y_true.size()
+            metrics = self.val_metrics(
+                y_pred.unsqueeze(1).contiguous(), y_true.unsqueeze(1).contiguous()
+            )
+
+        self.log_dict(
+            {k: v if v.size() == 1 else v.sum() for k, v in metrics.items()},
+            on_step=True,
+            on_epoch=True,
+            sync_dist=True,
+        )
