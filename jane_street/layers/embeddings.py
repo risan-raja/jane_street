@@ -2,6 +2,7 @@ from typing import Dict, List, Tuple, Union, Optional
 
 import torch
 import torch.nn as nn
+import math
 
 
 def get_embedding_size(n: int, max_size: int = 100) -> int:
@@ -26,7 +27,7 @@ class TimeDistributedEmbeddingBag(nn.EmbeddingBag):
         super().__init__(*args, **kwargs)
         self.batch_first = batch_first
 
-    def forward(self, x): # type: ignore
+    def forward(self, x):  # type: ignore
         if len(x.size()) <= 2:
             return super().forward(x)
 
@@ -129,7 +130,7 @@ class MultiEmbedding(nn.Module):
             # number embeddings based on order
             embedding_sizes = {
                 str(name): size for name, size in enumerate(embedding_sizes)
-            } # type: ignore
+            }  # type: ignore
             if isinstance(embedding_sizes, dict):
                 x_categoricals = list(embedding_sizes.keys())
             self.concat_output = True
@@ -137,15 +138,19 @@ class MultiEmbedding(nn.Module):
         # infer embedding sizes if not determined
         if isinstance(embedding_sizes, dict):
             self.embedding_sizes = {
-                name: (size, get_embedding_size(size)) if isinstance(size, int) else size
-                for name, size in embedding_sizes.items() # type: ignore
+                name: (size, get_embedding_size(size))
+                if isinstance(size, int)
+                else size
+                for name, size in embedding_sizes.items()  # type: ignore
             }
         self.categorical_groups = categorical_groups
         self.embedding_paddings = embedding_paddings
         self.max_embedding_size = max_embedding_size
         self.x_categoricals = x_categoricals
         if isinstance(x_categoricals, list):
-            self.x_categoricals_index = {name: i for i, name in enumerate(x_categoricals)}
+            self.x_categoricals_index = {
+                name: i for i, name in enumerate(x_categoricals)
+            }
         else:
             self.x_categoricals_index = {}
         self.categorical_groups_name_index = categorical_groups_name_index
@@ -159,8 +164,8 @@ class MultiEmbedding(nn.Module):
                 embedding_size = min(embedding_size, self.max_embedding_size)
             # convert to list to become mutable
             # type: ignore
-            self.embedding_sizes[name]: list = list(self.embedding_sizes[name]) # type: ignore
-            self.embedding_sizes[name][1] = embedding_size # type: ignore
+            self.embedding_sizes[name]: list = list(self.embedding_sizes[name])  # type: ignore
+            self.embedding_sizes[name][1] = embedding_size  # type: ignore
             if name in self.categorical_groups:  # embedding bag if related embeddings
                 self.embeddings[name] = TimeDistributedEmbeddingBag(
                     self.embedding_sizes[name][0],
@@ -196,7 +201,7 @@ class MultiEmbedding(nn.Module):
 
     @property
     def input_size(self) -> int:
-        return len(self.x_categoricals) # type: ignore
+        return len(self.x_categoricals)  # type: ignore
 
     @property
     def output_size(self) -> Union[Dict[str, int], int]:
@@ -224,13 +229,69 @@ class MultiEmbedding(nn.Module):
                 input_vectors[name] = emb(
                     x[
                         ...,
-                        [0,1,2],
+                        [0, 1, 2],
                     ]
                 )
             else:
-                input_vectors[name] = emb(x[..., self.x_categoricals_index[name]]) # type: ignore
+                input_vectors[name] = emb(x[..., self.x_categoricals_index[name]])  # type: ignore
 
         if self.concat_output:  # concatenate output
-            return torch.cat(list(input_vectors.values()), dim=-1) # type: ignore
+            return torch.cat(list(input_vectors.values()), dim=-1)  # type: ignore
         else:
             return input_vectors
+
+
+class TemporalPosEmbeddings(nn.Module):
+    def __init__(self, embedding_dim: int):
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        half_dim = embedding_dim // 2
+        self.div_term = torch.exp(
+            torch.arange(0, half_dim, 2) * (-math.log(10000.0) / half_dim)
+        )
+
+    def forward(self, date_id, time_idx):
+        # date_id and time_idx should be tensors of shape (batch_size, seq_len, 1)
+
+        # Create separate embeddings for date_id
+        # 1. Expand div_term to be compatible with date_id
+        div_term_date = (
+            self.div_term.unsqueeze(0).unsqueeze(0).to(date_id.device)
+        )  # Shape becomes (1, 1, half_dim // 2)
+
+        # 2. unsqueeze date_id to align with div_term_date and perform element-wise multiplication
+        date_vals = date_id * div_term_date  # Broadcasting happens here
+
+        # 3. Create embeddings
+        date_embeddings = torch.zeros(
+            date_id.shape[0], date_id.shape[1], self.embedding_dim // 2
+        ).to(date_id.device)
+        date_embeddings[:, :, 0::2] = torch.sin(date_vals)
+        date_embeddings[:, :, 1::2] = torch.cos(date_vals)
+
+        # Create separate embeddings for time_idx
+        # 1. Expand div_term to be compatible with time_idx
+        div_term_time = self.div_term.unsqueeze(0).unsqueeze(0).to(time_idx.device)
+
+        # 2. Unsqeeze time_idx to align with div_term_time and perform element-wise multiplication
+        time_vals = time_idx * div_term_time
+
+        # 3. Create embeddings
+        time_embeddings = torch.zeros(
+            time_idx.shape[0], time_idx.shape[1], self.embedding_dim // 2
+        ).to(time_idx.device)
+        time_embeddings[:, :, 0::2] = torch.sin(time_vals)
+        time_embeddings[:, :, 1::2] = torch.cos(time_vals)
+        return date_embeddings, time_embeddings
+
+
+class TemporalEmbeddingLayer(nn.Module):
+    def __init__(self, embedding_dim):
+        super().__init__()
+        self.date_embedding = nn.Linear(embedding_dim // 2, embedding_dim // 2)
+        self.time_embedding = nn.Linear(embedding_dim // 2, embedding_dim // 2)
+
+    def forward(self, date_id, time_idx):
+        date_emb = self.date_embedding(date_id)
+        time_emb = self.time_embedding(time_idx)
+        return torch.cat([date_emb, time_emb], dim=-1)

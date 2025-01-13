@@ -21,6 +21,7 @@ class GatedResidualNetwork(nn.Module):
         self.hidden_size = hidden_size
         self.dropout = dropout
         self.residual = residual
+        self.imbalanced_context = False
 
         if self.input_size != self.output_size and not self.residual:
             residual_size = self.input_size
@@ -30,15 +31,21 @@ class GatedResidualNetwork(nn.Module):
         if self.output_size != residual_size:
             self.resample_norm = ResampleNorm(residual_size, self.output_size)
 
+        if self.context_size is not None and self.context_size != self.hidden_size:
+            self.imbalanced_context = True
+
         self.fc1 = TimeDistributed(nn.Linear(self.input_size, self.hidden_size))
+        # self.fc1 = nn.Linear(self.input_size, self.hidden_size)
         self.elu = nn.ELU()
 
-        if self.context_size is not None:
+        if self.context_size is not None and self.imbalanced_context:
             self.context = TimeDistributed(
                 nn.Linear(self.context_size, self.hidden_size, bias=False)
             )
+            # self.context = nn.Linear(self.context_size, self.hidden_size, bias=False)
 
         self.fc2 = TimeDistributed(nn.Linear(self.hidden_size, self.hidden_size))
+        # self.fc2 = nn.Linear(self.hidden_size, self.hidden_size)
         self.init_weights()
 
         self.gate_norm = GateAddNorm(
@@ -69,7 +76,8 @@ class GatedResidualNetwork(nn.Module):
 
         x = self.fc1(x)
         if context is not None:
-            context = self.context(context)
+            if self.imbalanced_context:
+                context = self.context(context)
             x = x + context
         x = self.elu(x)
         x = self.fc2(x)

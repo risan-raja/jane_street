@@ -1,0 +1,751 @@
+hidden_size: 8
+real_variables:
+- time_idx
+- date_id
+- weight
+- feature_00
+- feature_01
+- feature_02
+- feature_03
+- feature_04
+- feature_05
+- feature_06
+- feature_07
+- feature_08
+- feature_12
+- feature_13
+- feature_14
+- feature_15
+- feature_16
+- feature_17
+- feature_18
+- feature_19
+- feature_20
+- feature_21
+- feature_22
+- feature_23
+- feature_24
+- feature_25
+- feature_26
+- feature_27
+- feature_28
+- feature_29
+- feature_30
+- feature_31
+- feature_32
+- feature_33
+- feature_34
+- feature_35
+- feature_36
+- feature_37
+- feature_38
+- feature_39
+- feature_40
+- feature_41
+- feature_42
+- feature_43
+- feature_44
+- feature_45
+- feature_46
+- feature_47
+- feature_48
+- feature_49
+- feature_50
+- feature_51
+- feature_52
+- feature_53
+- feature_54
+- feature_55
+- feature_56
+- feature_57
+- feature_58
+- feature_59
+- feature_60
+- feature_61
+- feature_62
+- feature_63
+- feature_64
+- feature_65
+- feature_66
+- feature_67
+- feature_68
+- feature_69
+- feature_70
+- feature_71
+- feature_72
+- feature_73
+- feature_74
+- feature_75
+- feature_76
+- feature_77
+- feature_78
+real_hidden_size: 16
+responder_variables:
+- responder_0
+- responder_1
+- responder_2
+- responder_3
+- responder_4
+- responder_5
+- responder_6
+- responder_7
+- responder_8
+x_categoricals:
+- feature_09
+- feature_10
+- feature_11
+- time_id
+- symbol_id
+static_categoricals:
+- symbol_id
+dropout: 0.1
+time_varying_categoricals:
+- feature_09
+- feature_10
+- feature_11
+share_single_variable_networks: true
+max_encoder_length: 968
+max_prediction_length: 968
+min_prediction_length: 1
+min_encoder_length: 1
+lstm_layers: 8
+n_heads: 4
+n_targets: 1
+output_size: 1
+causal_attention: false
+n_responders: 9
+target_idx: 6
+target_name: responder_6
+learning_rate: 0.0001
+quantiles:
+- 0.3
+- 0.5
+- 0.7
+weight_decay: 0.001
+embedding_sizes:
+  feature_09:
+  - 22
+  - 9
+  feature_10:
+  - 9
+  - 5
+  feature_11:
+  - 31
+  - 11
+  time_id:
+  - 968
+  - 16
+  symbol_id:
+  - 39
+  - 12
+log_interval: 2
+log_val_interval: 3
+val_dataset_size: 2000000
+val_shuffle: false
+train:
+  batch_size: 32
+  index_path: /storage/atlasAppRaja/library/atlas/jane_street/data/symbdf_cat_train.parquet
+  n_cardinal: 1
+val:
+  batch_size: 256
+  index_path: /storage/atlasAppRaja/library/atlas/jane_street/data/symbdf_cat_val.parquet
+test:
+  batch_size: 128
+  index_path: /storage/atlasAppRaja/library/atlas/jane_street/data/symbdf_cat_test.parquet
+data_dir: /storage/atlasAppRaja/library/atlas/jane_street/data
+skip_interpretation: true
+hidden_real_size: 8
+hidden_cat_size: 8
+group_hidden_size: 8
+feature_groups:
+  feature_group_0:
+  - feature_20
+  - feature_21
+  - feature_22
+  - feature_23
+  - feature_24
+  - feature_25
+  - feature_26
+  - feature_27
+  - feature_28
+  - feature_29
+  - feature_30
+  - feature_31
+  feature_group_2:
+  - feature_00
+  - feature_01
+  - feature_02
+  - feature_03
+  - feature_04
+  - feature_32
+  - feature_33
+  - feature_34
+  - feature_35
+  - feature_36
+  feature_group_3:
+  - feature_05
+  - feature_06
+  - feature_07
+  - feature_08
+  - feature_37
+  - feature_38
+  - feature_39
+  - feature_40
+  - feature_41
+  - feature_42
+  - feature_43
+  - feature_44
+  - feature_45
+  - feature_46
+  - feature_47
+  - feature_48
+  - feature_49
+  - feature_50
+  - feature_51
+  - feature_52
+  - feature_53
+  - feature_54
+  - feature_55
+  - feature_56
+  - feature_57
+  - feature_58
+  - feature_59
+  - feature_60
+  feature_group_4:
+  - feature_18
+  - feature_39
+  - feature_40
+  - feature_41
+  - feature_45
+  - feature_50
+  - feature_51
+  - feature_52
+  - feature_56
+  - feature_65
+  feature_group_5:
+  - feature_19
+  - feature_42
+  - feature_43
+  - feature_44
+  - feature_46
+  - feature_53
+  - feature_54
+  - feature_55
+  - feature_57
+  - feature_66
+  feature_group_6:
+  - feature_15
+  - feature_16
+  - feature_17
+  - feature_62
+  - feature_63
+  - feature_64
+  feature_group_7:
+  - feature_18
+  - feature_19
+  - feature_65
+  - feature_66
+  feature_group_8:
+  - feature_73
+  - feature_74
+  - feature_75
+  - feature_76
+  - feature_77
+  - feature_78
+  feature_group_9:
+  - feature_12
+  - feature_13
+  - feature_14
+  - feature_67
+  - feature_68
+  - feature_69
+  - feature_70
+  - feature_71
+  - feature_72
+  feature_group_10:
+  - feature_70
+  - feature_71
+  - feature_72
+  feature_group_11:
+  - feature_67
+  - feature_68
+  - feature_69
+  feature_group_12:
+  - feature_02
+  - feature_04
+  - feature_06
+  - feature_13
+  - feature_16
+  - feature_34
+  - feature_36
+  - feature_40
+  - feature_43
+  - feature_48
+  - feature_51
+  - feature_54
+  - feature_59
+  - feature_63
+  - feature_68
+  - feature_71
+  - feature_75
+  - feature_76
+  feature_group_13:
+  - feature_01
+  - feature_03
+  - feature_04
+  - feature_07
+  - feature_14
+  - feature_17
+  - feature_33
+  - feature_35
+  - feature_36
+  - feature_41
+  - feature_44
+  - feature_49
+  - feature_52
+  - feature_55
+  - feature_60
+  - feature_64
+  - feature_69
+  - feature_72
+  - feature_77
+  - feature_78
+  feature_group_14:
+  - feature_00
+  - feature_01
+  - feature_05
+  - feature_12
+  - feature_15
+  - feature_32
+  - feature_33
+  - feature_39
+  - feature_42
+  - feature_47
+  - feature_50
+  - feature_53
+  - feature_58
+  - feature_62
+  - feature_67
+  - feature_70
+  - feature_73
+  - feature_74
+  feature_group_15:
+  - feature_39
+  - feature_40
+  - feature_41
+  - feature_42
+  - feature_43
+  - feature_44
+  - feature_45
+  - feature_46
+  - feature_47
+  - feature_48
+  - feature_49
+  - feature_61
+  - feature_62
+  - feature_63
+  - feature_64
+  - feature_65
+  - feature_66
+  feature_group_16:
+  - feature_00
+  - feature_01
+  - feature_02
+  - feature_03
+  - feature_04
+  - feature_05
+  - feature_06
+  - feature_07
+  - feature_08
+  - feature_20
+responder_groups:
+  responder_group_0:
+  - responder_0
+  - responder_1
+  - responder_2
+  responder_group_1:
+  - responder_2
+  - responder_5
+  - responder_8
+  responder_group_2:
+  - responder_0
+  - responder_3
+  - responder_6
+  responder_group_3:
+  - responder_1
+  - responder_4
+  - responder_7
+  responder_group_4:
+  - responder_3
+  - responder_4
+  - responder_5
+features:
+- time_idx
+- date_id
+- weight
+- feature_00
+- feature_01
+- feature_02
+- feature_03
+- feature_04
+- feature_05
+- feature_06
+- feature_07
+- feature_08
+- feature_12
+- feature_13
+- feature_14
+- feature_15
+- feature_16
+- feature_17
+- feature_18
+- feature_19
+- feature_20
+- feature_21
+- feature_22
+- feature_23
+- feature_24
+- feature_25
+- feature_26
+- feature_27
+- feature_28
+- feature_29
+- feature_30
+- feature_31
+- feature_32
+- feature_33
+- feature_34
+- feature_35
+- feature_36
+- feature_37
+- feature_38
+- feature_39
+- feature_40
+- feature_41
+- feature_42
+- feature_43
+- feature_44
+- feature_45
+- feature_46
+- feature_47
+- feature_48
+- feature_49
+- feature_50
+- feature_51
+- feature_52
+- feature_53
+- feature_54
+- feature_55
+- feature_56
+- feature_57
+- feature_58
+- feature_59
+- feature_60
+- feature_61
+- feature_62
+- feature_63
+- feature_64
+- feature_65
+- feature_66
+- feature_67
+- feature_68
+- feature_69
+- feature_70
+- feature_71
+- feature_72
+- feature_73
+- feature_74
+- feature_75
+- feature_76
+- feature_77
+- feature_78
+responders:
+- responder_0
+- responder_1
+- responder_2
+- responder_3
+- responder_4
+- responder_5
+- responder_6
+- responder_7
+- responder_8
+cat_features:
+- feature_09
+- feature_10
+- feature_11
+- time_id
+- symbol_id
+all_reals:
+- time_idx
+- date_id
+- weight
+- feature_00
+- feature_01
+- feature_02
+- feature_03
+- feature_04
+- feature_05
+- feature_06
+- feature_07
+- feature_08
+- feature_12
+- feature_13
+- feature_14
+- feature_15
+- feature_16
+- feature_17
+- feature_18
+- feature_19
+- feature_20
+- feature_21
+- feature_22
+- feature_23
+- feature_24
+- feature_25
+- feature_26
+- feature_27
+- feature_28
+- feature_29
+- feature_30
+- feature_31
+- feature_32
+- feature_33
+- feature_34
+- feature_35
+- feature_36
+- feature_37
+- feature_38
+- feature_39
+- feature_40
+- feature_41
+- feature_42
+- feature_43
+- feature_44
+- feature_45
+- feature_46
+- feature_47
+- feature_48
+- feature_49
+- feature_50
+- feature_51
+- feature_52
+- feature_53
+- feature_54
+- feature_55
+- feature_56
+- feature_57
+- feature_58
+- feature_59
+- feature_60
+- feature_61
+- feature_62
+- feature_63
+- feature_64
+- feature_65
+- feature_66
+- feature_67
+- feature_68
+- feature_69
+- feature_70
+- feature_71
+- feature_72
+- feature_73
+- feature_74
+- feature_75
+- feature_76
+- feature_77
+- feature_78
+- responder_0
+- responder_1
+- responder_2
+- responder_3
+- responder_4
+- responder_5
+- responder_6
+- responder_7
+- responder_8
+context_group:
+  context_group:
+  - symbol_id
+  - weight
+  - feature_09
+  - feature_10
+  - feature_11
+droup_out: 0.01
+lone_groups:
+- group_1
+feature_group_edges:
+- - 0
+  - 15
+- - 1
+  - 11
+- - 1
+  - 12
+- - 1
+  - 13
+- - 1
+  - 15
+- - 2
+  - 3
+- - 2
+  - 4
+- - 2
+  - 11
+- - 2
+  - 12
+- - 2
+  - 13
+- - 2
+  - 14
+- - 2
+  - 15
+- - 3
+  - 6
+- - 3
+  - 11
+- - 3
+  - 12
+- - 3
+  - 13
+- - 3
+  - 14
+- - 4
+  - 6
+- - 4
+  - 11
+- - 4
+  - 12
+- - 4
+  - 13
+- - 4
+  - 14
+- - 5
+  - 11
+- - 5
+  - 12
+- - 5
+  - 13
+- - 5
+  - 14
+- - 6
+  - 14
+- - 7
+  - 11
+- - 7
+  - 12
+- - 7
+  - 13
+- - 8
+  - 9
+- - 8
+  - 10
+- - 8
+  - 11
+- - 8
+  - 12
+- - 8
+  - 13
+- - 9
+  - 11
+- - 9
+  - 12
+- - 9
+  - 13
+- - 10
+  - 11
+- - 10
+  - 12
+- - 10
+  - 13
+- - 11
+  - 12
+- - 11
+  - 14
+- - 11
+  - 15
+- - 12
+  - 13
+- - 12
+  - 14
+- - 12
+  - 15
+- - 13
+  - 14
+- - 13
+  - 15
+feature_group_edge_weights:
+- 1
+- 4
+- 6
+- 4
+- 5
+- 8
+- 8
+- 7
+- 7
+- 7
+- 11
+- 4
+- 2
+- 2
+- 2
+- 2
+- 5
+- 2
+- 2
+- 2
+- 2
+- 5
+- 2
+- 2
+- 2
+- 3
+- 2
+- 2
+- 2
+- 2
+- 3
+- 3
+- 3
+- 3
+- 3
+- 1
+- 1
+- 1
+- 1
+- 1
+- 1
+- 2
+- 4
+- 3
+- 2
+- 4
+- 4
+- 4
+- 3
+num_heads: 2
+responder_group_edges:
+- - 0
+  - 1
+- - 0
+  - 2
+- - 0
+  - 3
+- - 1
+  - 4
+- - 2
+  - 4
+- - 3
+  - 4
+responder_group_edge_weights:
+- 1
+- 1
+- 1
+- 1
+- 1
+- 1
+time_features:
+- date_id
+- time_idx
+temporal_embedding_dim: 2
+num_projection_layers: 4

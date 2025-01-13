@@ -1,2 +1,3 @@
 from .predict_sampler import JSPredictDataSampler
 from .train_sampler import JSTrainDistributedSampler
+from .train_samplerv2 import JSTrainDataSampler

@@ -197,6 +197,7 @@ class TFT(nn.Module, TupleOutputMixIn):
         )
 
         self.output_layer = nn.Linear(config.hidden_size, config.output_size)
+        self.output_act = nn.Tanh()
 
         #### Metadata for Torch Compile
         self.real_variables = list(self.config.real_variables)
@@ -403,7 +404,7 @@ class TFT(nn.Module, TupleOutputMixIn):
             lstm_output,
             self.expand_static_context(static_context_enrichment, timesteps),
         )
-        attn_output, attn_output_weights = self.multihead_attn(
+        attn_output, _ = self.multihead_attn(
             q=dec_attn_input,
             k=attn_input,
             v=attn_input,
@@ -411,16 +412,25 @@ class TFT(nn.Module, TupleOutputMixIn):
         )
         attn_output = self.post_attn_gate_norm(attn_output, dec_attn_input)
         output = self.pos_wise_ff(attn_output)
-        output = self.pre_output_gate_norm(output, lstm_output_decoder)
-        output = self.revin[self.target_name](self.output_layer(output), mode="denorm")
-        return self.to_network_output(
-            prediction=output,
-            # attention=attn_output_weights,
-            # static_variables=torch.cat(
-            #     [enc_static_variable_selection, dec_static_variable_selection], dim=1
-            # ),
-            # encoder_variables=encoder_sparse_weights,
-            # decoder_variables=decoder_sparse_weights,
-            encoder_lengths=encoder_lengths,
-            decoder_lengths=decoder_lengths,
+        output = self.pre_output_gate_norm(output, lstm_output_decoder)  # B x T x 3
+        output = self.revin[self.target_name](output, mode="denorm")
+        output = self.output_layer(output)  # This is the last step.
+        output = self.output_act(output) * 5.0
+        output = (
+            torch.stack(
+                [
+                    output[i, x["decoder_lengths"][i] - 1, :]
+                    for i in range(output.size(0))
+                ],
+                dim=0,
+            )
+            .unsqueeze(-1)
+            .clamp(
+                min=torch.tensor(-5.0).to(output.device),
+                max=torch.tensor(5.0).to(output.device),
+            )
         )
+        # print(output.shape)
+        # However we need the last decoded step and disregard the padding.
+        # print(f'Output Shape is {output.shape}')
+        return output

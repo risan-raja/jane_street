@@ -1,10 +1,13 @@
 train:
-  batch_size: 64
-  index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_train.parquet
+  batch_size: 128
+  index_path: /storage/atlasAppRaja/library/atlas/jane_street/data/symbdf_cat_train.parquet
+  n_cardinal: 1
 val:
   batch_size: 256
-  index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_val.parquet
+  index_path: /storage/atlasAppRaja/library/atlas/jane_street/data/symbdf_cat_val.parquet
 test:
-  batch_size: 256
-  index_path: /storage/atlasAppRaja/library/kaggle/jane_street/data/symbdf_cat_test.parquet
-data_dir: /storage/atlasAppRaja/library/kaggle/jane_street/data
+  batch_size: 128
+  index_path: /storage/atlasAppRaja/library/atlas/jane_street/data/symbdf_cat_test.parquet
+limit_val_batches: 1200
+val_dataset_size: 1843200
+data_dir: /storage/atlasAppRaja/library/atlas/jane_street/data

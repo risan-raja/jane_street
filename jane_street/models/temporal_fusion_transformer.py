@@ -6,8 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from ..layers.tft import TFT
-from ..metrics.quantile import WeightedQuantileLoss
-from ..metrics.point import SMAPE, MAE, MAPE
+
+# from ..metrics.quantile import WeightedQuantileLoss
+# from ..metrics.r2score import WeightedZeroMeanR2Score
+from ..metrics.point import SMAPE, MSSE, MAE, MSE, nMSE
 from ..utils.outputs import detach, create_mask, integer_histogram, masked_op
 from ..utils.pad import padded_stack
 
@@ -26,8 +28,14 @@ class TemporalFT(ppl.LightningModule):
         self.save_hyperparameters(master_conf)
         self.config = master_conf
         self.model = TFT(master_conf)
-        self.loss = WeightedQuantileLoss(master_conf.quantiles)
-        self.logging_metrics = [SMAPE(), MAE(), MAPE()]
+        # self.wq_loss = WeightedQuantileLoss(master_conf.quantiles)
+        self.r_loss = MSSE()
+        self.loss = MSE()
+        # self.train_weighted_r2 = WeightedZeroMeanR2Score()
+        # self.val_weighted_r2 = WeightedZeroMeanR2Score()
+        # self.wt_loss = ZRMSS(master_conf.quantiles)
+        self.logging_metrics = [SMAPE(), MAE(), self.r_loss, nMSE()]
+        # self.logging_metrics = [SMAPE()]
         self.training_step_outputs = []
         self.validation_step_outputs = []
         self.test_step_outputs = []
@@ -55,7 +63,23 @@ class TemporalFT(ppl.LightningModule):
         return self.model(X)
 
     def configure_optimizers(self):
-        return torch.optim.RAdam(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(
+            self.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.config.weight_decay,
+        )
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", patience=5, factor=0.8
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "monitor": "val_loss",
+                "interval": "epoch",
+                "frequency": 6,
+            },
+        }
 
     def log(self, *args, **kwargs):
         """See :meth:`lightning.pytorch.core.lightning.LightningModule.log`."""
@@ -116,22 +140,27 @@ class TemporalFT(ppl.LightningModule):
         x, y = batch
         log, out = self.step(x, y, batch_idx)
         self.training_step_outputs.append(log)
-        if self.global_step % 10 == 0:
+        if self.global_step % self.log_interval == 0:
             self.log_metrics(y, out, batch_idx)
         # if self.global_step % self.log_interval*5 == 0:
         #     # self.log_interpretation(self.training_step_output
         #     self.training_step_outputs.clear()
         # self.on_train_epoch_end()
+        # self.train_weighted_r2.update(out["prediction"].detach().squeeze(), y.detach().squeeze()[...,0], y.detach().squeeze()[...,1])
         return log
 
     def on_train_epoch_end(self):
         self.on_epoch_end(self.training_step_outputs)
+        # train_r2 = self.train_weighted_r2.compute()
         self.training_step_outputs.clear()
+        # self.log("hp/train_weighted_r2", train_r2, sync_dist=True)
+        # self.train_weighted_r2.reset()
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         log, out = self.step(x, y, batch_idx)
         log.update(self.create_log(x, y, out, batch_idx))
+        # self.val_weighted_r2.update(out["prediction"].detach().squeeze(), y.squeeze()[...,0], y.squeeze()[...,1])
         self.validation_step_outputs.append(log)
         if self.global_step % self.log_interval == 0:
             self.log_metrics(y, out, batch_idx)
@@ -152,6 +181,9 @@ class TemporalFT(ppl.LightningModule):
 
     def on_validation_epoch_end(self):
         self.on_epoch_end(self.validation_step_outputs)
+        # val_r2 = self.val_weighted_r2.compute()
+        # self.log("hp/val_weighted_r2", val_r2, sync_dist=True)
+        # self.val_weighted_r2.reset()
         self.validation_step_outputs.clear()
 
     def test_step(self, batch, batch_idx):
@@ -183,7 +215,25 @@ class TemporalFT(ppl.LightningModule):
             on_epoch=True,
             batch_size=len(x["decoder_lengths"]),
             sync_dist=True,
+            prog_bar=True,
         )
+        self.log(
+            f"hp/{self.current_stage}_loss",
+            loss,
+            # prog_bar=True,
+            on_step=True,
+            on_epoch=True,
+            batch_size=len(x["decoder_lengths"]),
+            sync_dist=True,
+        )
+        # self.log(
+        #     f"{self.current_stage}_max_decoder_length",
+        #     int(x["decoder_lengths"].max().item()),
+        #     on_step=True,
+        #     on_epoch=True,
+        #     batch_size=len(x["decoder_lengths"]),
+        #     sync_dist=True,
+        # )
         # self.log
         # self.log_metrics()
         log = {"loss": loss, "n_samples": x["decoder_lengths"].size(0)}

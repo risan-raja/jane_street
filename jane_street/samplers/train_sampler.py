@@ -5,7 +5,6 @@ from torch.utils.data import DistributedSampler
 from typing import Optional
 import polars as pl
 import math
-import json
 import torch.distributed as dist
 from ..datasets.js_dataset import JSTrainDataset
 
@@ -35,12 +34,13 @@ class JSTrainDistributedSampler(DistributedSampler):
     def __init__(
         self,
         dataset: JSTrainDataset,
-        frequency: int = 2,
+        frequency_1: int = 1,
+        frequency_2: int = 3,
         num_replicas: Optional[int] = None,
         rank: Optional[int] = None,
         shuffle: bool = True,
-        seed: int = 0,
-        drop_last: bool = False,
+        seed: int = 42,
+        drop_last: bool = True,
     ) -> None:
         if num_replicas is None:
             if not dist.is_available():
@@ -62,10 +62,11 @@ class JSTrainDistributedSampler(DistributedSampler):
         self.drop_last = drop_last
         # Since the previous day is used for prediction the data from the next
         # Day might creep into the same epoch. To avoid this we skip a day.
-        self.frequency = frequency
+        self.frequency_1 = frequency_1
+        self.frequency_2 = frequency_2
         self.shuffle = shuffle
         self.seed = seed
-        self.date_min: str = self.index["end_date"].cast(pl.Int16).min()  # type: ignore
+        self.date_min: str = self.index["end_date"].cast(pl.Int16).min() + 672  # type: ignore
         self.date_max: str = self.index["end_date"].cast(pl.Int16).max()
         self.date_symbols: pl.DataFrame = self.index.group_by("end_date").agg(
             pl.col("symbol_id").n_unique().alias("n_symbols")
@@ -73,25 +74,29 @@ class JSTrainDistributedSampler(DistributedSampler):
 
     @property
     def date_skip(self) -> int:
-        return self.epoch % self.frequency
-
-    @property
-    def epoch_samples(self) -> int:
-        pass
+        return self.epoch % self.frequency_1
 
     @property
     def epoch_dates(self) -> Tensor:
-        return torch.arange(
+        f1_dates = torch.arange(
             int(self.date_min) + self.date_skip,
             int(self.date_max) + 1,
-            step=self.frequency,
+            step=self.frequency_1,
             dtype=torch.int16,
         )
+        f2_dates = torch.arange(
+            int(self.date_min) + self.date_skip + 1,
+            int(self.date_max) + 1,
+            step=self.frequency_2,
+            dtype=torch.int16,
+        )
+        return torch.cat([f1_dates, f2_dates], dim=0)
 
     def assign_time_steps(self, dates, g) -> Tensor:
-        time_steps = torch.arange(1, 969)[torch.randperm(968, generator=g)][
-            : dates.shape[0]
-        ]
+        g.manual_seed(self.seed + self.epoch + self.rank)
+        time_steps_1 = torch.arange(1, 969)[torch.randperm(968, generator=g)]
+        time_steps_2 = torch.arange(1, 969)[torch.randperm(968, generator=g)]
+        time_steps = torch.cat([time_steps_1, time_steps_2], dim=0)[: dates.size(0)]
         time_steps[dates < 677] = time_steps[dates < 677].clip(1, 849)
         return time_steps
 
@@ -128,17 +133,6 @@ class JSTrainDistributedSampler(DistributedSampler):
             g = torch.Generator()
             g.manual_seed(self.seed)
             indices = self.get_indices_epoch(g)  # type: ignore[arg-type]
-
-        # if self.drop_last and len(self.dataset) % self.num_replicas != 0:  # type: ignore[arg-type]
-        #     # Split to nearest available length that is evenly divisible.
-        #     # This is to ensure each rank receives the same amount of data when
-        #     # using this Sampler.
-        #     self.num_samples = math.ceil(
-        #         (len(indices) - self.num_replicas) / self.num_replicas  # type: ignore[arg-type]
-        #     )
-        # else:
-        #     self.num_samples = math.ceil(len(indices) / self.num_replicas)  # type: ignore[arg-type]
-
         self.total_size = self.num_samples * self.num_replicas
 
         if not self.drop_last:
@@ -157,10 +151,7 @@ class JSTrainDistributedSampler(DistributedSampler):
 
         # subsample
         indices = indices[self.rank : self.total_size : self.num_replicas]
-        with open(f"indices_train_epoch_{self.epoch}_rank_{self.rank}.json", "w") as f:
-            json.dump(indices, f)
         assert len(indices) == self.num_samples
-        # print("Indices Assigned ", len(indices))
         return iter(indices)
 
     @property
