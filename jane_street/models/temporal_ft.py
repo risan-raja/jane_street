@@ -1,4 +1,4 @@
-from lightning.pytorch.trainer.states import RunningStage
+from pytorch_lightning.trainer.states import RunningStage
 from typing import Dict
 from omegaconf import DictConfig
 import pytorch_lightning as ppl
