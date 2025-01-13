@@ -58,6 +58,8 @@ class TemporalFT(ppl.LightningModule):
         )
         self.validation_step_outputs = []
         self.training_step_outputs = []
+        if isinstance(self.loss, R2Score):
+            self.objective = "max"
 
     def configure_callbacks(self):
         early_stopping = EarlyStopping(
@@ -77,11 +79,24 @@ class TemporalFT(ppl.LightningModule):
             every_n_train_steps=200,
             verbose=False,
             enable_version_counter=True,
+            # every_n_epochs=1,
+        )
+        backup = ModelCheckpoint(
+            dirpath="/storage/atlasAppRaja/library/atlas/model_checkpts/",
+            monitor="val_score",
+            filename="{epoch}-{val_score:.2f}-backup-temporal-ft",
+            save_top_k=30,
+            mode="max",
+            # every_n_train_steps=200,
+            verbose=False,
+            enable_version_counter=True,
+            every_n_epochs=1,
+            save_on_train_epoch_end=True,
         )
         swa = StochasticWeightAveraging(swa_lrs=1e-3, swa_epoch_start=3)
         accumulator = GradientAccumulationScheduler(scheduling={1: 2})
         lr_monitor = LearningRateMonitor(logging_interval="step")
-        return [early_stopping, checkpoint, swa, accumulator, lr_monitor]
+        return [early_stopping, checkpoint, swa, accumulator, lr_monitor, backup]
 
     def forward(self, X: Dict[str, torch.Tensor]) -> torch.Tensor:
         return self.model(X)
@@ -261,6 +276,7 @@ class TemporalFT(ppl.LightningModule):
 
     def on_validation_epoch_end(self):
         zrmse = self.score_output(self.validation_step_outputs)
+        print(f"Validation ZRMSE: {zrmse} Rank: {self.global_rank}")
         self.log(f"{self.current_stage}_score", zrmse, sync_dist=True, prog_bar=True)
         self.log("hp_metric", zrmse, on_epoch=True, sync_dist=True)
         self.validation_step_outputs.clear()

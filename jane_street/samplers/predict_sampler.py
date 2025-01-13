@@ -67,15 +67,7 @@ class JSPredictDataSampler(DistributedSampler):
         if max_samples is None:
             raise ValueError("max_samples must be provided")
         self.max_samples = max_samples
-        # if max_samples is not None and shuffle:
-        #     self.index = self.index.sample(n=max_samples, seed=seed)
-        # elif max_samples is not None and not shuffle:
-        #     self.index = self.index.head(n=max_samples)
-        # self.indexes = self.index["idx"].to_list()
         if self.drop_last and self.max_samples % self.num_replicas != 0:  # type: ignore[arg-type]
-            # Split to nearest available length that is evenly divisible.
-            # This is to ensure each rank receives the same amount of data when
-            # using this Sampler.
             self.num_samples = math.ceil(
                 (self.max_samples - self.num_replicas) / self.num_replicas  # type: ignore[arg-type]
             )
@@ -89,8 +81,8 @@ class JSPredictDataSampler(DistributedSampler):
             index = self.mindex.sample(n=self.max_samples, seed=self.seed + self.epoch)
         else:
             index = self.mindex.slice(
-                (self.epoch // 4) * self.max_samples,
-                self.max_samples * ((self.epoch // 4) + 1)
+                (self.epoch // 2) * self.max_samples,
+                self.max_samples * ((self.epoch // 2) + 1)
                 + 5000,  # slice a bit more to avoid out of bound
             ).slice(0, self.max_samples)
             if len(index) < self.max_samples:
@@ -101,20 +93,7 @@ class JSPredictDataSampler(DistributedSampler):
         return index
 
     def __iter__(self):
-        # if self.shuffle:
-        #     # deterministically shuffle based on epoch and seed
-        #     g = torch.Generator()
-        #     g.manual_seed(self.seed + self.epoch)
-        #     indices = torch.randperm(
-        #         len(self.index["idx"].to_list()), generator=g
-        #     ).tolist()  # type: ignore[arg-type]
-        #     indices = self.index["idx"].to_numpy()[indices].ravel().tolist()
-        # else:
-        # Already shuffled. Refer to the property index
         indices = self.index["idx"].to_list()  # type: ignore[arg-type]
-        # indices = self.index["idx"].to_list()
-        # if not self.drop_last:
-        # add extra samples to make it evenly divisible
         padding_size = self.total_size - len(indices)
         if padding_size <= len(indices):
             indices += indices[:padding_size]

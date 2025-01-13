@@ -52,7 +52,7 @@ class JSDatasetMeta:
     )
     categories_path: str = field(default=f"{dataloc}/categories.json")
     zaar_root_path: str = field(
-        default="/storage/atlasAppRaja/library/atlas/data/train_symbol_fast.zarr"
+        default="/storage/atlasAppRaja/library/atlas/data/train_symbol_fast_final.zarr"
     )
     feature_scaler_path: str = field(default=f"{dataloc}/feature_scaler.pkl")
     index_path: str = field(default=f"{dataloc}/symbdf_cat_train.parquet")

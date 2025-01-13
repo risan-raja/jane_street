@@ -118,7 +118,9 @@ class RidgeRegressor(nn.Module):
             # Woodbury
             A = torch.bmm(X, X.mT)
             A.diagonal(dim1=-2, dim2=-1).add_(reg_coeff)
-            weights = torch.bmm(X.mT, torch.linalg.solve(A, Y))
+            weights = torch.bmm(
+                X.mT, torch.linalg.solve(A, Y.to(dtype=A.dtype, device=A.device))
+            )
 
         return weights[:, :-1], weights[:, -1:]
 

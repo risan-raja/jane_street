@@ -5,6 +5,7 @@ from omegaconf import DictConfig
 from ..datasets import JSTSDataset, JSDatasetMeta, custom_collate_fn
 from ..samplers import JSPredictDataSampler
 from ..samplers.train_sampler_uni import JSTrainDataSampler
+from ..samplers.test_sampler import JSTestDataSampler
 
 
 class JSDataModule(pl.LightningDataModule):
@@ -71,15 +72,19 @@ class JSDataModule(pl.LightningDataModule):
             batch_size=self.val_batch_size,
             sampler=self.val_sampler,
             collate_fn=custom_collate_fn,
-            pin_memory=False,
+            pin_memory=True,
             num_workers=16,
             drop_last=False,
         )
 
     def test_dataloader(self):
         self.test_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
-        self.test_dataset = JSTSDataset(self.test_dataset_metadata)
-        self.test_sampler = JSPredictDataSampler(self.test_dataset, shuffle=False)
+        self.test_dataset = JSTSDataset(
+            self.val_dataset_metadata, lookback_sampling=self.sampling
+        )
+        self.test_sampler = JSTestDataSampler(
+            self.test_dataset, shuffle=False, max_samples=None
+        )
         return DataLoader(
             dataset=self.test_dataset,
             batch_size=self.test_batch_size,
@@ -91,7 +96,13 @@ class JSDataModule(pl.LightningDataModule):
         )
 
     def predict_dataloader(self):
-        self.test_sampler = JSPredictDataSampler(self.test_dataset, shuffle=False)
+        self.test_dataset_metadata = JSDatasetMeta(index_path=self.test_index_path)
+        self.test_dataset = JSTSDataset(
+            self.val_dataset_metadata, lookback_sampling=self.sampling
+        )
+        self.test_sampler = JSTestDataSampler(
+            self.test_dataset, shuffle=False, max_samples=None
+        )
         return DataLoader(
             dataset=self.test_dataset,
             batch_size=self.test_batch_size,

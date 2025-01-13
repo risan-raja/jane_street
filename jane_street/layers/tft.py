@@ -197,6 +197,7 @@ class TFT(nn.Module, TupleOutputMixIn):
         )
 
         self.output_layer = nn.Linear(config.hidden_size, config.output_size)
+        self.output_act = nn.Tanh()
 
         #### Metadata for Torch Compile
         self.real_variables = list(self.config.real_variables)
@@ -403,7 +404,7 @@ class TFT(nn.Module, TupleOutputMixIn):
             lstm_output,
             self.expand_static_context(static_context_enrichment, timesteps),
         )
-        attn_output, attn_output_weights = self.multihead_attn(
+        attn_output, _ = self.multihead_attn(
             q=dec_attn_input,
             k=attn_input,
             v=attn_input,
@@ -414,6 +415,7 @@ class TFT(nn.Module, TupleOutputMixIn):
         output = self.pre_output_gate_norm(output, lstm_output_decoder)  # B x T x 3
         output = self.revin[self.target_name](output, mode="denorm")
         output = self.output_layer(output)  # This is the last step.
+        output = self.output_act(output) * 5.0
         output = (
             torch.stack(
                 [

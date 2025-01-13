@@ -95,15 +95,15 @@ class JSTrainDataSampler(DistributedSampler):
             g.manual_seed(self.seed + self.epoch + int(tstep_idx))
             if tstep_idx < 848:
                 dates = torch.randint(
-                    500,
-                    self.date_max + 1,
+                    350,
+                    1518 + 1,
                     (self.batch_size * self.num_replicas,),
                     generator=g,
                 ).numpy()
             else:
                 dates = torch.randint(
                     677,
-                    self.date_max + 1,
+                    1518 + 1,
                     (self.batch_size * self.num_replicas,),
                     generator=g,
                 ).numpy()
