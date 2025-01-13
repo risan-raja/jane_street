@@ -53,7 +53,7 @@ class JSDataModule(pl.LightningDataModule):
             sampler=self.train_sampler,
             collate_fn=custom_collate_fn,
             num_workers=24,
-            pin_memory=True,
+            pin_memory=False,
             drop_last=True,
         )
 
@@ -72,7 +72,7 @@ class JSDataModule(pl.LightningDataModule):
             batch_size=self.val_batch_size,
             sampler=self.val_sampler,
             collate_fn=custom_collate_fn,
-            pin_memory=True,
+            pin_memory=False,
             num_workers=16,
             drop_last=False,
         )
@@ -90,7 +90,7 @@ class JSDataModule(pl.LightningDataModule):
             batch_size=self.test_batch_size,
             sampler=self.test_sampler,
             collate_fn=custom_collate_fn,
-            pin_memory=True,
+            pin_memory=False,
             num_workers=8,
             drop_last=False,
         )
@@ -108,7 +108,7 @@ class JSDataModule(pl.LightningDataModule):
             batch_size=self.test_batch_size,
             sampler=self.test_sampler,
             collate_fn=custom_collate_fn,
-            pin_memory=True,
+            pin_memory=False,
             num_workers=8,
             drop_last=False,
         )

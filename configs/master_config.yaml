@@ -1,4 +1,4 @@
-hidden_size: 16
+hidden_size: 8
 real_variables:
 - time_idx
 - date_id
@@ -79,7 +79,7 @@ real_variables:
 - feature_76
 - feature_77
 - feature_78
-real_hidden_size: 16
+real_hidden_size: 8
 responder_variables:
 - responder_0
 - responder_1
@@ -125,19 +125,19 @@ weight_decay: 0.001
 embedding_sizes:
   feature_09:
   - 22
-  - 9
+  - 8
   feature_10:
   - 9
   - 5
   feature_11:
   - 31
-  - 11
+  - 8
   time_id:
   - 968
-  - 16
+  - 8
   symbol_id:
   - 39
-  - 12
+  - 8
 log_interval: 2
 log_val_interval: 3
 val_dataset_size: 1843200
@@ -155,4 +155,4 @@ test:
   index_path: /storage/atlasAppRaja/library/atlas/jane_street/data/symbdf_cat_test.parquet
 data_dir: /storage/atlasAppRaja/library/atlas/jane_street/data
 skip_interpretation: true
-lookback_sampling: 10
+lookback_sampling: 2

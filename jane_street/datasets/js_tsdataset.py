@@ -15,6 +15,7 @@ class JSTSDataset(Dataset):
         hist_concat=False,
         strict=True,
         lookback_sampling=4,
+        lookback_without_sampling=None,
     ):
         super(JSTSDataset, self).__init__()
         self.metadata = dataset_metadata
@@ -24,7 +25,10 @@ class JSTSDataset(Dataset):
         self.time_vars_idx = [0, 1, 2]
         self.symbol_vars_idx = 3
         self.static_covariate_idx = [3]
+        self.max_lookback = None
         self.lookback_sampling = lookback_sampling
+        if lookback_without_sampling is not None:
+            self.max_lookback = lookback_without_sampling
         self.target_idx = [89]
         self.feature_vars_idx = [
             i
@@ -113,9 +117,15 @@ class JSTSDataset(Dataset):
         decoder_length = self._to_tensor(
             int(index[self.index_keys["decoder_length"]]), torch.int16
         )
-        symbol_hist_data: ArrayLike = self.root[f"{symbol_id}/{start_date}"].oindex[
-            :: self.lookback_sampling
-        ]  # type: ignore
+        if self.max_lookback is not None:
+            encoder_length = torch.ones_like(encoder_length) * self.max_lookback
+            symbol_hist_data: ArrayLike = self.root[f"{symbol_id}/{start_date}"].oindex[
+                -self.max_lookback :, :
+            ]  # type: ignore
+        else:
+            symbol_hist_data: ArrayLike = self.root[f"{symbol_id}/{start_date}"].oindex[
+                :: self.lookback_sampling
+            ]  # type: ignore
         encoder_length = (
             (encoder_length / encoder_length) * symbol_hist_data.shape[0]
         ).type(torch.int16)

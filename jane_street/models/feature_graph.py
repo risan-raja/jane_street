@@ -1,4 +1,4 @@
-from lightning.pytorch.trainer.states import RunningStage
+from pytorch_lightning.trainer.states import RunningStage
 import pytorch_lightning as ppl
 from ..layers.fgraph import FeatureGraph
 from pytorch_lightning.callbacks import (

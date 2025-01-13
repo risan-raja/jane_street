@@ -1,4 +1,4 @@
-from lightning.pytorch.trainer.states import RunningStage
+from pytorch_lightning.trainer.states import RunningStage
 from typing import Optional
 import pytorch_lightning as ppl
 from ..layers.fourier import FourierFastPred, FourierIndexPred

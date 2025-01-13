@@ -1,4 +1,4 @@
-from lightning.pytorch.trainer.states import RunningStage
+from pytorch_lightning.trainer.states import RunningStage
 from typing import Dict
 from omegaconf import DictConfig
 import pytorch_lightning as ppl
@@ -276,7 +276,7 @@ class TemporalFT(ppl.LightningModule):
 
     def on_validation_epoch_end(self):
         zrmse = self.score_output(self.validation_step_outputs)
-        print(f"Validation ZRMSE: {zrmse} Rank: {self.global_rank}")
+        print(f"Validation Score: {zrmse} Rank: {self.global_rank}")
         self.log(f"{self.current_stage}_score", zrmse, sync_dist=True, prog_bar=True)
         self.log("hp_metric", zrmse, on_epoch=True, sync_dist=True)
         self.validation_step_outputs.clear()
